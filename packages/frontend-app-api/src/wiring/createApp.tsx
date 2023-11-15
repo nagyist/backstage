@@ -92,9 +92,11 @@ import { collectRouteIds } from '../routing/collectRouteIds';
 import { createAppTree } from '../tree';
 import { AppNode } from '@backstage/frontend-plugin-api';
 import { InternalAppContext } from './InternalAppContext';
+import { CoreRouter } from '../extensions/CoreRouter';
 
 const builtinExtensions = [
   Core,
+  CoreRouter,
   CoreRoutes,
   CoreNav,
   CoreLayout,
