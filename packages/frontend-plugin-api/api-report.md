@@ -9,11 +9,13 @@ import { AnyApiFactory } from '@backstage/core-plugin-api';
 import { AnyApiRef } from '@backstage/core-plugin-api';
 import { ApiRef } from '@backstage/core-plugin-api';
 import { AppTheme } from '@backstage/core-plugin-api';
+import { ComponentType } from 'react';
 import { IconComponent } from '@backstage/core-plugin-api';
 import { JsonObject } from '@backstage/types';
 import { JSX as JSX_2 } from 'react';
 import { default as React_2 } from 'react';
 import { ReactNode } from 'react';
+import { SignInPageProps } from '@backstage/core-plugin-api';
 import { z } from 'zod';
 import { ZodSchema } from 'zod';
 import { ZodTypeDef } from 'zod';
@@ -344,6 +346,25 @@ export function createRouteRef<
 export function createSchemaFromZod<TOutput, TInput>(
   schemaCreator: (zImpl: typeof z) => ZodSchema<TOutput, ZodTypeDef, TInput>,
 ): PortableSchema<TOutput>;
+
+// @public (undocumented)
+export function createSignInPageExtension<
+  TConfig extends {},
+  TInputs extends AnyExtensionInputMap,
+>(options: {
+  id: string;
+  attachTo?: {
+    id: string;
+    input: string;
+  };
+  configSchema?: PortableSchema<TConfig>;
+  disabled?: boolean;
+  inputs?: TInputs;
+  loader: (options: {
+    config: TConfig;
+    inputs: Expand<ExtensionInputValues<TInputs>>;
+  }) => Promise<ComponentType<SignInPageProps>>;
+}): Extension<TConfig>;
 
 // @public
 export function createSubRouteRef<
