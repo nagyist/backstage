@@ -93,7 +93,7 @@ export function useOwnedEntitiesCount() {
 
   useEffect(() => {
     if (ownershipEntityRefs) {
-      if (request && Object.keys(request).length === 0) {
+      if (!request || Object.keys(request).length === 0) {
         return;
       }
       fetchEntities(request, ownershipEntityRefs);
