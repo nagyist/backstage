@@ -15,20 +15,12 @@
  */
 
 import { Config } from '@backstage/config';
-import { assertError, InputError, NotFoundError } from '@backstage/errors';
-import {
-  DefaultGithubCredentialsProvider,
-  GithubCredentialsProvider,
-  ScmIntegrationRegistry,
-} from '@backstage/integration';
-import { OctokitOptions } from '@octokit/core/dist-types/types';
+import { assertError, NotFoundError } from '@backstage/errors';
 import { Octokit } from 'octokit';
-import { Logger } from 'winston';
 
 import {
   getRepoSourceDirectory,
   initRepoAndPush,
-  parseRepoUrl,
 } from '@backstage/plugin-scaffolder-node';
 
 import Sodium from 'libsodium-wrappers';
@@ -36,68 +28,7 @@ import {
   enableBranchProtectionOnDefaultRepoBranch,
   entityRefToName,
 } from './gitHelpers';
-
-const DEFAULT_TIMEOUT_MS = 60_000;
-
-export async function getOctokitOptions(options: {
-  integrations: ScmIntegrationRegistry;
-  credentialsProvider?: GithubCredentialsProvider;
-  token?: string;
-  repoUrl: string;
-}): Promise<OctokitOptions> {
-  const { integrations, credentialsProvider, repoUrl, token } = options;
-  const { owner, repo, host } = parseRepoUrl(repoUrl, integrations);
-
-  const requestOptions = {
-    // set timeout to 60 seconds
-    timeout: DEFAULT_TIMEOUT_MS,
-  };
-
-  if (!owner) {
-    throw new InputError(`No owner provided for repo ${repoUrl}`);
-  }
-
-  const integrationConfig = integrations.github.byHost(host)?.config;
-
-  if (!integrationConfig) {
-    throw new InputError(`No integration for host ${host}`);
-  }
-
-  // short circuit the `githubCredentialsProvider` if there is a token provided by the caller already
-  if (token) {
-    return {
-      auth: token,
-      baseUrl: integrationConfig.apiBaseUrl,
-      previews: ['nebula-preview'],
-      request: requestOptions,
-    };
-  }
-
-  const githubCredentialsProvider =
-    credentialsProvider ??
-    DefaultGithubCredentialsProvider.fromIntegrations(integrations);
-
-  // TODO(blam): Consider changing this API to take host and repo instead of repoUrl, as we end up parsing in this function
-  // and then parsing in the `getCredentials` function too the other side
-  const { token: credentialProviderToken } =
-    await githubCredentialsProvider.getCredentials({
-      url: `https://${host}/${encodeURIComponent(owner)}/${encodeURIComponent(
-        repo,
-      )}`,
-    });
-
-  if (!credentialProviderToken) {
-    throw new InputError(
-      `No token available for host: ${host}, with owner ${owner}, and repo ${repo}`,
-    );
-  }
-
-  return {
-    auth: credentialProviderToken,
-    baseUrl: integrationConfig.apiBaseUrl,
-    previews: ['nebula-preview'],
-  };
-}
+import { LoggerService } from '@backstage/backend-plugin-api';
 
 export async function createGithubRepoWithCollaboratorsAndTopics(
   client: Octokit,
@@ -137,7 +68,15 @@ export async function createGithubRepoWithCollaboratorsAndTopics(
   topics: string[] | undefined,
   repoVariables: { [key: string]: string } | undefined,
   secrets: { [key: string]: string } | undefined,
-  logger: Logger,
+  oidcCustomization:
+    | {
+        useDefault: boolean;
+        includeClaimKeys?: string[];
+      }
+    | undefined,
+  customProperties: { [key: string]: string } | undefined,
+  subscribe: boolean | undefined,
+  logger: LoggerService,
 ) {
   // eslint-disable-next-line testing-library/no-await-sync-queries
   const user = await client.rest.users.getByUsername({
@@ -168,6 +107,8 @@ export async function createGithubRepoWithCollaboratorsAndTopics(
           has_projects: hasProjects,
           has_wiki: hasWiki,
           has_issues: hasIssues,
+          // Custom properties only available on org repos
+          custom_properties: customProperties,
         })
       : client.rest.repos.createForAuthenticatedUser({
           name: repo,
@@ -304,6 +245,27 @@ export async function createGithubRepoWithCollaboratorsAndTopics(
     }
   }
 
+  if (oidcCustomization) {
+    await client.request(
+      'PUT /repos/{owner}/{repo}/actions/oidc/customization/sub',
+      {
+        owner,
+        repo,
+        use_default: oidcCustomization.useDefault,
+        include_claim_keys: oidcCustomization.includeClaimKeys,
+      },
+    );
+  }
+
+  if (subscribe) {
+    await client.rest.activity.setRepoSubscription({
+      subscribed: true,
+      ignored: false,
+      owner,
+      repo,
+    });
+  }
+
   return newRepo;
 }
 
@@ -337,6 +299,7 @@ export async function initRepoPushAndProtect(
   requiredStatusCheckContexts: string[],
   requireBranchesToBeUpToDate: boolean,
   requiredConversationResolution: boolean,
+  requireLastPushApproval: boolean,
   config: Config,
   logger: any,
   gitCommitMessage?: string,
@@ -344,6 +307,7 @@ export async function initRepoPushAndProtect(
   gitAuthorEmail?: string,
   dismissStaleReviews?: boolean,
   requiredCommitSigning?: boolean,
+  requiredLinearHistory?: boolean,
 ): Promise<{ commitHash: string }> {
   const gitAuthorInfo = {
     name: gitAuthorName
@@ -385,9 +349,11 @@ export async function initRepoPushAndProtect(
         requiredStatusCheckContexts,
         requireBranchesToBeUpToDate,
         requiredConversationResolution,
+        requireLastPushApproval,
         enforceAdmins: protectEnforceAdmins,
         dismissStaleReviews: dismissStaleReviews,
         requiredCommitSigning: requiredCommitSigning,
+        requiredLinearHistory: requiredLinearHistory,
       });
     } catch (e) {
       assertError(e);

@@ -15,7 +15,7 @@
  */
 
 import React, { PropsWithChildren } from 'react';
-import { makeStyles } from '@material-ui/core';
+import { makeStyles } from '@material-ui/core/styles';
 import HomeIcon from '@material-ui/icons/Home';
 import RuleIcon from '@material-ui/icons/AssignmentTurnedIn';
 import MapIcon from '@material-ui/icons/MyLocation';
@@ -32,7 +32,6 @@ import {
   UserSettingsSignInAvatar,
 } from '@backstage/plugin-user-settings';
 import { SidebarSearchModal } from '@backstage/plugin-search';
-import { Shortcuts } from '@backstage/plugin-shortcuts';
 import {
   Link,
   Sidebar,
@@ -166,7 +165,6 @@ export const Root = ({ children }: PropsWithChildren<{}>) => (
           <SidebarItem icon={Score} to="score-board" text="Score board" />
         </SidebarScrollWrapper>
         <SidebarDivider />
-        <Shortcuts allowExternalLinks />
         <SidebarDivider />
         <NotificationsSidebarItem />
       </SidebarGroup>

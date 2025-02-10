@@ -14,13 +14,15 @@
  * limitations under the License.
  */
 
-import { MockFetchApi, setupRequestMockHandlers } from '@backstage/test-utils';
+import { MockFetchApi, registerMswTestHooks } from '@backstage/test-utils';
 import { rest } from 'msw';
 import { setupServer } from 'msw/node';
 import { NotificationsClient } from './NotificationsClient';
 import { Notification } from '@backstage/plugin-notifications-common';
 
 const server = setupServer();
+
+const testTopic = 'test-topic';
 
 const testNotification: Partial<Notification> = {
   user: 'user:default/john.doe',
@@ -29,11 +31,12 @@ const testNotification: Partial<Notification> = {
     title: 'Notification 1',
     link: '/catalog',
     severity: 'normal',
+    topic: testTopic,
   },
 };
 
 describe('NotificationsClient', () => {
-  setupRequestMockHandlers(server);
+  registerMswTestHooks(server);
   const mockBaseUrl = 'http://backstage/api/notifications';
   const discoveryApi = { getBaseUrl: async () => mockBaseUrl };
   const fetchApi = new MockFetchApi();
@@ -48,7 +51,7 @@ describe('NotificationsClient', () => {
 
     it('should fetch notifications from correct endpoint', async () => {
       server.use(
-        rest.get(`${mockBaseUrl}/`, (_, res, ctx) =>
+        rest.get(`${mockBaseUrl}/notifications`, (_, res, ctx) =>
           res(ctx.json(expectedResp)),
         ),
       );
@@ -58,20 +61,65 @@ describe('NotificationsClient', () => {
 
     it('should fetch notifications with options', async () => {
       server.use(
-        rest.get(`${mockBaseUrl}/`, (req, res, ctx) => {
+        rest.get(`${mockBaseUrl}/notifications`, (req, res, ctx) => {
           expect(req.url.search).toBe(
-            '?type=undone&limit=10&offset=0&search=find+me',
+            '?limit=10&offset=0&search=find+me&read=true&createdAfter=1970-01-01T00%3A00%3A00.005Z',
           );
           return res(ctx.json(expectedResp));
         }),
       );
       const response = await client.getNotifications({
-        type: 'undone',
         limit: 10,
         offset: 0,
         search: 'find me',
+        read: true,
+        createdAfter: new Date(5),
       });
       expect(response).toEqual(expectedResp);
+    });
+
+    it('should fetch notifications of the topic', async () => {
+      server.use(
+        rest.get(`${mockBaseUrl}/notifications`, (req, res, ctx) => {
+          expect(req.url.search).toBe(`?limit=10&offset=0&topic=${testTopic}`);
+          return res(ctx.json(expectedResp));
+        }),
+      );
+
+      const response = await client.getNotifications({
+        limit: 10,
+        offset: 0,
+        topic: testTopic,
+      });
+      expect(response).toEqual(expectedResp);
+    });
+
+    it('should omit unselected fetch options', async () => {
+      server.use(
+        rest.get(`${mockBaseUrl}/notifications`, (req, res, ctx) => {
+          expect(req.url.search).toBe('?limit=10');
+          return res(ctx.json(expectedResp));
+        }),
+      );
+      const response = await client.getNotifications({
+        limit: 10,
+        // do not put more options here
+      });
+      expect(response).toEqual(expectedResp);
+    });
+
+    it('should fetch single notification', async () => {
+      server.use(
+        rest.get(`${mockBaseUrl}/notifications/:id`, (req, res, ctx) => {
+          expect(req.params.id).toBe('acdaa8ca-262b-43c1-b74b-de06e5f3b3c7');
+          return res(ctx.json(testNotification));
+        }),
+      );
+
+      const response = await client.getNotification(
+        'acdaa8ca-262b-43c1-b74b-de06e5f3b3c7',
+      );
+      expect(response).toEqual(testNotification);
     });
 
     it('should fetch status from correct endpoint', async () => {
@@ -86,17 +134,50 @@ describe('NotificationsClient', () => {
 
     it('should update notifications', async () => {
       server.use(
-        rest.post(`${mockBaseUrl}/update`, async (req, res, ctx) => {
-          expect(await req.json()).toEqual({
-            ids: ['acdaa8ca-262b-43c1-b74b-de06e5f3b3c7'],
-            done: true,
-          });
-          return res(ctx.json(expectedResp));
-        }),
+        rest.post(
+          `${mockBaseUrl}/notifications/update`,
+          async (req, res, ctx) => {
+            expect(await req.json()).toEqual({
+              ids: ['acdaa8ca-262b-43c1-b74b-de06e5f3b3c7'],
+            });
+            return res(ctx.json(expectedResp));
+          },
+        ),
       );
       const response = await client.updateNotifications({
         ids: ['acdaa8ca-262b-43c1-b74b-de06e5f3b3c7'],
-        done: true,
+      });
+      expect(response).toEqual(expectedResp);
+    });
+  });
+
+  describe('getTopics', () => {
+    const expectedResp = [testTopic];
+
+    it('should fetch topics from correct endpoint', async () => {
+      server.use(
+        rest.get(`${mockBaseUrl}/topics`, (_, res, ctx) =>
+          res(ctx.json(expectedResp)),
+        ),
+      );
+      const response = await client.getTopics();
+      expect(response).toEqual(expectedResp);
+    });
+
+    it('should fetch topics with options', async () => {
+      server.use(
+        rest.get(`${mockBaseUrl}/topics`, (req, res, ctx) => {
+          expect(req.url.search).toBe(
+            '?search=find+me&read=true&createdAfter=1970-01-01T00%3A00%3A00.005Z',
+          );
+          return res(ctx.json(expectedResp));
+        }),
+      );
+
+      const response = await client.getTopics({
+        search: 'find me',
+        read: true,
+        createdAfter: new Date(5),
       });
       expect(response).toEqual(expectedResp);
     });

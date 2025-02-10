@@ -29,12 +29,11 @@ jest.mock('@backstage/plugin-scaffolder-node', () => {
 import { createPublishBitbucketServerAction } from './bitbucketServer';
 import { rest } from 'msw';
 import { setupServer } from 'msw/node';
-import { setupRequestMockHandlers } from '@backstage/backend-test-utils';
+import { registerMswTestHooks } from '@backstage/backend-test-utils';
 import { ScmIntegrations } from '@backstage/integration';
 import { ConfigReader } from '@backstage/config';
-import { getVoidLogger } from '@backstage/backend-common';
-import { PassThrough } from 'stream';
 import { initRepoAndPush } from '@backstage/plugin-scaffolder-node';
+import { createMockActionContext } from '@backstage/plugin-scaffolder-node-test-utils';
 
 describe('publish:bitbucketServer', () => {
   const config = new ConfigReader({
@@ -60,19 +59,14 @@ describe('publish:bitbucketServer', () => {
 
   const integrations = ScmIntegrations.fromConfig(config);
   const action = createPublishBitbucketServerAction({ integrations, config });
-  const mockContext = {
+  const mockContext = createMockActionContext({
     input: {
       repoUrl: 'hosted.bitbucket.com?project=project&repo=repo',
       repoVisibility: 'private' as const,
     },
-    workspacePath: 'wsp',
-    logger: getVoidLogger(),
-    logStream: new PassThrough(),
-    output: jest.fn(),
-    createTemporaryDirectory: jest.fn(),
-  };
+  });
   const server = setupServer();
-  setupRequestMockHandlers(server);
+  registerMswTestHooks(server);
 
   beforeEach(() => {
     jest.resetAllMocks();

@@ -33,41 +33,21 @@ import {
   OAuthRequestDialog,
   SignInPage,
 } from '@backstage/core-components';
-import { apiDocsPlugin, ApiExplorerPage } from '@backstage/plugin-api-docs';
-import { AzurePullRequestsPage } from '@backstage/plugin-azure-devops';
-
-import {
-  CatalogEntityPage,
-  CatalogIndexPage,
-  catalogPlugin,
-} from '@backstage/plugin-catalog';
+import { ApiExplorerPage } from '@backstage/plugin-api-docs';
+import { CatalogEntityPage, CatalogIndexPage } from '@backstage/plugin-catalog';
 
 import { CatalogGraphPage } from '@backstage/plugin-catalog-graph';
-import {
-  CatalogImportPage,
-  catalogImportPlugin,
-} from '@backstage/plugin-catalog-import';
-import {
-  CostInsightsLabelDataflowInstructionsPage,
-  CostInsightsPage,
-  CostInsightsProjectGrowthInstructionsPage,
-} from '@backstage/plugin-cost-insights';
-import { orgPlugin } from '@backstage/plugin-org';
-import { ExplorePage } from '@backstage/plugin-explore';
-import { GcpProjectsPage } from '@backstage/plugin-gcp-projects';
+import { CatalogImportPage } from '@backstage/plugin-catalog-import';
 import { HomepageCompositionRoot, VisitListener } from '@backstage/plugin-home';
-import { LighthousePage } from '@backstage/plugin-lighthouse';
-import { NewRelicPage } from '@backstage/plugin-newrelic';
-import { ScaffolderPage, scaffolderPlugin } from '@backstage/plugin-scaffolder';
+
+import { ScaffolderPage } from '@backstage/plugin-scaffolder';
 import {
   ScaffolderFieldExtensions,
   ScaffolderLayouts,
 } from '@backstage/plugin-scaffolder-react';
 import { SearchPage } from '@backstage/plugin-search';
-import { TechRadarPage } from '@backstage/plugin-tech-radar';
 import {
   TechDocsIndexPage,
-  techdocsPlugin,
   TechDocsReaderPage,
 } from '@backstage/plugin-techdocs';
 import { TechDocsAddons } from '@backstage/plugin-techdocs-react';
@@ -93,25 +73,21 @@ import { DelayingComponentFieldExtension } from './components/scaffolder/customS
 import { defaultPreviewTemplate } from './components/scaffolder/defaultPreviewTemplate';
 import { searchPage } from './components/search/SearchPage';
 import { providers } from './identityProviders';
-import * as plugins from './plugins';
-
+import { SignalsDisplay } from '@backstage/plugin-signals';
 import { techDocsPage } from './components/techdocs/TechDocsPage';
-import { ApacheAirflowPage } from '@backstage/plugin-apache-airflow';
 import { RequirePermission } from '@backstage/plugin-permission-react';
 import { catalogEntityCreatePermission } from '@backstage/plugin-catalog-common/alpha';
-import { PlaylistIndexPage, PlaylistPage } from '@backstage/plugin-playlist';
 import { TwoColumnLayout } from './components/scaffolder/customScaffolderLayouts';
-import { ScoreBoardPage } from '@oriflame/backstage-plugin-score-card';
-import { StackstormPage } from '@backstage/plugin-stackstorm';
-import { PuppetDbPage } from '@backstage/plugin-puppetdb';
-import { DevToolsPage } from '@backstage/plugin-devtools';
 import { customDevToolsPage } from './components/devtools/CustomDevToolsPage';
+import { DevToolsPage } from '@backstage/plugin-devtools';
 import { CatalogUnprocessedEntitiesPage } from '@backstage/plugin-catalog-unprocessed-entities';
-import { NotificationsPage } from '@backstage/plugin-notifications';
+import {
+  NotificationsPage,
+  UserNotificationSettingsCard,
+} from '@backstage/plugin-notifications';
 
 const app = createApp({
   apis,
-  plugins: Object.values(plugins),
   icons: {
     // Custom icon example
     alert: AlarmIcon,
@@ -135,23 +111,6 @@ const app = createApp({
       );
     },
   },
-  bindRoutes({ bind }) {
-    bind(catalogPlugin.externalRoutes, {
-      createComponent: scaffolderPlugin.routes.root,
-      viewTechDoc: techdocsPlugin.routes.docRoot,
-      createFromTemplate: scaffolderPlugin.routes.selectedTemplate,
-    });
-    bind(apiDocsPlugin.externalRoutes, {
-      registerApi: catalogImportPlugin.routes.importPage,
-    });
-    bind(scaffolderPlugin.externalRoutes, {
-      registerComponent: catalogImportPlugin.routes.importPage,
-      viewTechDoc: techdocsPlugin.routes.docRoot,
-    });
-    bind(orgPlugin.externalRoutes, {
-      catalogIndex: catalogPlugin.routes.catalogIndex,
-    });
-  },
 });
 
 const routes = (
@@ -161,7 +120,10 @@ const routes = (
     <Route path="/home" element={<HomepageCompositionRoot />}>
       {homePage}
     </Route>
-    <Route path="/catalog" element={<CatalogIndexPage />} />
+    <Route
+      path="/catalog"
+      element={<CatalogIndexPage pagination={{ mode: 'offset', limit: 20 }} />}
+    />
     <Route
       path="/catalog/:namespace/:kind/:name"
       element={<CatalogEntityPage />}
@@ -202,7 +164,10 @@ const routes = (
         />
       }
     />
-    <Route path="/docs" element={<TechDocsIndexPage />} />
+    <Route
+      path="/docs"
+      element={<TechDocsIndexPage pagination={{ mode: 'offset', limit: 20 }} />}
+    />
     <Route
       path="/docs/:namespace/:kind/:name/*"
       element={<TechDocsReaderPage />}
@@ -237,39 +202,22 @@ const routes = (
         <TwoColumnLayout />
       </ScaffolderLayouts>
     </Route>
-    <Route path="/explore" element={<ExplorePage />} />
-    <Route
-      path="/tech-radar"
-      element={<TechRadarPage width={1500} height={800} />}
-    />
-    <Route path="/lighthouse" element={<LighthousePage />} />
+
     <Route path="/api-docs" element={<ApiExplorerPage />} />
-    <Route path="/gcp-projects" element={<GcpProjectsPage />} />
-    <Route path="/newrelic" element={<NewRelicPage />} />
     <Route path="/search" element={<SearchPage />}>
       {searchPage}
     </Route>
-    <Route path="/cost-insights" element={<CostInsightsPage />} />
-    <Route
-      path="/cost-insights/investigating-growth"
-      element={<CostInsightsProjectGrowthInstructionsPage />}
-    />
-    <Route
-      path="/cost-insights/labeling-jobs"
-      element={<CostInsightsLabelDataflowInstructionsPage />}
-    />
+
     <Route path="/settings" element={<UserSettingsPage />}>
       <SettingsLayout.Route path="/advanced" title="Advanced">
         <AdvancedSettings />
       </SettingsLayout.Route>
+      <SettingsLayout.Route path="/notifications" title="Notifications">
+        <UserNotificationSettingsCard
+          originNames={{ 'plugin:scaffolder': 'Scaffolder' }}
+        />
+      </SettingsLayout.Route>
     </Route>
-    <Route path="/azure-pull-requests" element={<AzurePullRequestsPage />} />
-    <Route path="/apache-airflow" element={<ApacheAirflowPage />} />
-    <Route path="/playlist" element={<PlaylistIndexPage />} />
-    <Route path="/playlist/:playlistId" element={<PlaylistPage />} />
-    <Route path="/score-board" element={<ScoreBoardPage />} />
-    <Route path="/stackstorm" element={<StackstormPage />} />
-    <Route path="/puppetdb" element={<PuppetDbPage />} />
     <Route path="/devtools" element={<DevToolsPage />}>
       {customDevToolsPage}
     </Route>
@@ -281,6 +229,7 @@ export default app.createRoot(
   <>
     <AlertDisplay transientTimeoutMs={2500} />
     <OAuthRequestDialog />
+    <SignalsDisplay />
     <AppRouter>
       <VisitListener />
       <Root>{routes}</Root>

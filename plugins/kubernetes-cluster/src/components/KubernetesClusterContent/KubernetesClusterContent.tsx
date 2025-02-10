@@ -15,7 +15,8 @@
  */
 import React from 'react';
 import { ApiResources } from '../ApiResources/ApiResources';
-import { Grid, Typography } from '@material-ui/core';
+import Grid from '@material-ui/core/Grid';
+import Typography from '@material-ui/core/Typography';
 import { Nodes } from '../Nodes/Nodes';
 import { ClusterOverview } from '../ClusterOverview';
 import {
@@ -23,6 +24,10 @@ import {
   useKubernetesClusterError,
 } from '../KubernetesClusterErrorContext/KubernetesClusterErrorContext';
 import { WarningPanel } from '@backstage/core-components';
+import { kubernetesClustersReadPermission } from '@backstage/plugin-kubernetes-common';
+import { RequirePermission } from '@backstage/plugin-permission-react';
+import { useTranslationRef } from '@backstage/core-plugin-api/alpha';
+import { kubernetesClusterTranslationRef } from '../../translation';
 
 const ContentGrid = () => {
   const { error } = useKubernetesClusterError();
@@ -56,9 +61,21 @@ const ContentGrid = () => {
  * @public
  */
 export const KubernetesClusterContent = () => {
+  const { t } = useTranslationRef(kubernetesClusterTranslationRef);
+
   return (
-    <KubernetesClusterErrorProvider>
-      <ContentGrid />
-    </KubernetesClusterErrorProvider>
+    <RequirePermission
+      permission={kubernetesClustersReadPermission}
+      errorPage={
+        <WarningPanel
+          title={t('kubernetesClusterContentPage.permissionAlert.title')}
+          message={t('kubernetesClusterContentPage.permissionAlert.message')}
+        />
+      }
+    >
+      <KubernetesClusterErrorProvider>
+        <ContentGrid />
+      </KubernetesClusterErrorProvider>
+    </RequirePermission>
   );
 };

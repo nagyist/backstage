@@ -16,32 +16,38 @@
 
 import { JsonObject } from '@backstage/types';
 import {
-  PluginDatabaseManager,
+  DatabaseService,
   resolvePackagePath,
-} from '@backstage/backend-common';
+} from '@backstage/backend-plugin-api';
 import { ConflictError, NotFoundError } from '@backstage/errors';
 import { Knex } from 'knex';
 import { v4 as uuid } from 'uuid';
 import {
   TaskStore,
-  TaskStoreEmitOptions,
-  TaskStoreListEventsOptions,
   TaskStoreCreateTaskOptions,
   TaskStoreCreateTaskResult,
-  TaskStoreShutDownTaskOptions,
+  TaskStoreEmitOptions,
+  TaskStoreListEventsOptions,
   TaskStoreRecoverTaskOptions,
+  TaskStoreShutDownTaskOptions,
 } from './types';
 import {
-  SerializedTaskEvent,
   SerializedTask,
-  TaskStatus,
+  SerializedTaskEvent,
   TaskEventType,
   TaskSecrets,
+  TaskStatus,
 } from '@backstage/plugin-scaffolder-node';
 import { DateTime, Duration } from 'luxon';
 import { TaskRecovery, TaskSpec } from '@backstage/plugin-scaffolder-common';
 import { trimEventsTillLastRecovery } from './taskRecoveryHelper';
 import { intervalFromNowTill } from './dbUtil';
+import {
+  restoreWorkspace,
+  serializeWorkspace,
+} from '@backstage/plugin-scaffolder-node/alpha';
+import { flattenParams } from '../../service/helpers';
+import { EventsService } from '@backstage/plugin-events-node';
 
 const migrationsDir = resolvePackagePath(
   '@backstage/plugin-scaffolder-backend',
@@ -52,10 +58,12 @@ export type RawDbTaskRow = {
   id: string;
   spec: string;
   status: TaskStatus;
+  state?: string;
   last_heartbeat_at?: string;
   created_at: string;
   created_by: string | null;
   secrets?: string | null;
+  workspace?: Buffer;
 };
 
 export type RawDbTaskEventRow = {
@@ -72,18 +80,19 @@ export type RawDbTaskEventRow = {
  * @public
  */
 export type DatabaseTaskStoreOptions = {
-  database: PluginDatabaseManager | Knex;
+  database: DatabaseService | Knex;
+  events?: EventsService;
 };
 
 /**
- * Type guard to help DatabaseTaskStore understand when database is PluginDatabaseManager vs. when database is a Knex instance.
+ * Type guard to help DatabaseTaskStore understand when database is DatabaseService vs. when database is a Knex instance.
  *
  * * @public
  */
-function isPluginDatabaseManager(
-  opt: PluginDatabaseManager | Knex,
-): opt is PluginDatabaseManager {
-  return (opt as PluginDatabaseManager).getClient !== undefined;
+function isDatabaseService(
+  opt: DatabaseService | Knex,
+): opt is DatabaseService {
+  return (opt as DatabaseService).getClient !== undefined;
 }
 
 const parseSqlDateToIsoString = <T>(input: T): T | string => {
@@ -107,6 +116,7 @@ const parseSqlDateToIsoString = <T>(input: T): T | string => {
  */
 export class DatabaseTaskStore implements TaskStore {
   private readonly db: Knex;
+  private readonly events?: EventsService;
 
   static async create(
     options: DatabaseTaskStoreOptions,
@@ -116,7 +126,7 @@ export class DatabaseTaskStore implements TaskStore {
 
     await this.runMigrations(database, client);
 
-    return new DatabaseTaskStore(client);
+    return new DatabaseTaskStore(client, options.events);
   }
 
   private isRecoverableTask(spec: TaskSpec): boolean {
@@ -144,9 +154,9 @@ export class DatabaseTaskStore implements TaskStore {
   }
 
   private static async getClient(
-    database: PluginDatabaseManager | Knex,
+    database: DatabaseService | Knex,
   ): Promise<Knex> {
-    if (isPluginDatabaseManager(database)) {
+    if (isDatabaseService(database)) {
       return database.getClient();
     }
 
@@ -154,10 +164,10 @@ export class DatabaseTaskStore implements TaskStore {
   }
 
   private static async runMigrations(
-    database: PluginDatabaseManager | Knex,
+    database: DatabaseService | Knex,
     client: Knex,
   ): Promise<void> {
-    if (!isPluginDatabaseManager(database)) {
+    if (!isDatabaseService(database)) {
       await client.migrate.latest({
         directory: migrationsDir,
       });
@@ -172,22 +182,76 @@ export class DatabaseTaskStore implements TaskStore {
     }
   }
 
-  private constructor(client: Knex) {
+  private constructor(client: Knex, events?: EventsService) {
     this.db = client;
+    this.events = events;
+  }
+
+  private getState(task: RawDbTaskRow) {
+    try {
+      return task.state ? JSON.parse(task.state).state : undefined;
+    } catch (error) {
+      throw new Error(
+        `Failed to parse state of the task '${task.id}', ${error}`,
+      );
+    }
   }
 
   async list(options: {
     createdBy?: string;
-  }): Promise<{ tasks: SerializedTask[] }> {
-    const queryBuilder = this.db<RawDbTaskRow>('tasks');
+    status?: TaskStatus;
+    filters?: {
+      createdBy?: string | string[];
+      status?: TaskStatus | TaskStatus[];
+    };
+    pagination?: {
+      limit?: number;
+      offset?: number;
+    };
+    order?: { order: 'asc' | 'desc'; field: string }[];
+  }): Promise<{ tasks: SerializedTask[]; totalTasks?: number }> {
+    const { createdBy, status, pagination, order, filters } = options ?? {};
+    const queryBuilder = this.db<RawDbTaskRow & { count: number }>('tasks');
 
-    if (options.createdBy) {
-      queryBuilder.where({
-        created_by: options.createdBy,
-      });
+    if (createdBy || filters?.createdBy) {
+      const arr: string[] = flattenParams<string>(
+        createdBy,
+        filters?.createdBy,
+      );
+      queryBuilder.whereIn('created_by', [...new Set(arr)]);
     }
 
-    const results = await queryBuilder.orderBy('created_at', 'desc').select();
+    if (status || filters?.status) {
+      const arr: TaskStatus[] = flattenParams<TaskStatus>(
+        status,
+        filters?.status,
+      );
+      queryBuilder.whereIn('status', [...new Set(arr)]);
+    }
+
+    const countQuery = queryBuilder.clone();
+    countQuery.count('tasks.id', { as: 'count' });
+
+    if (order) {
+      order.forEach(f => {
+        queryBuilder.orderBy(f.field, f.order);
+      });
+    } else {
+      queryBuilder.orderBy('created_at', 'desc');
+    }
+
+    if (pagination?.limit !== undefined) {
+      queryBuilder.limit(pagination.limit);
+    }
+
+    if (pagination?.offset !== undefined) {
+      queryBuilder.offset(pagination.offset);
+    }
+
+    const [results, [{ count }]] = await Promise.all([
+      queryBuilder.select(),
+      countQuery,
+    ]);
 
     const tasks = results.map(result => ({
       id: result.id,
@@ -198,7 +262,7 @@ export class DatabaseTaskStore implements TaskStore {
       createdAt: parseSqlDateToIsoString(result.created_at),
     }));
 
-    return { tasks };
+    return { tasks, totalTasks: count };
   }
 
   async getTask(taskId: string): Promise<SerializedTask> {
@@ -211,6 +275,7 @@ export class DatabaseTaskStore implements TaskStore {
     try {
       const spec = JSON.parse(result.spec);
       const secrets = result.secrets ? JSON.parse(result.secrets) : undefined;
+      const state = this.getState(result);
       return {
         id: result.id,
         spec,
@@ -219,6 +284,7 @@ export class DatabaseTaskStore implements TaskStore {
         createdAt: parseSqlDateToIsoString(result.created_at),
         createdBy: result.created_by ?? undefined,
         secrets,
+        state,
       };
     } catch (error) {
       throw new Error(`Failed to parse spec of task '${taskId}', ${error}`);
@@ -236,6 +302,17 @@ export class DatabaseTaskStore implements TaskStore {
       created_by: options.createdBy ?? null,
       status: 'open',
     });
+
+    this.events?.publish({
+      topic: 'scaffolder.task',
+      eventPayload: {
+        id: taskId,
+        spec: options.spec,
+        createdBy: options.createdBy,
+        status: 'open',
+      },
+    });
+
     return { taskId };
   }
 
@@ -267,16 +344,23 @@ export class DatabaseTaskStore implements TaskStore {
         return undefined;
       }
 
-      const secrets = this.parseTaskSecrets(task);
-      return {
+      const ret: SerializedTask = {
         id: task.id,
         spec,
         status: 'processing',
         lastHeartbeatAt: task.last_heartbeat_at,
         createdAt: task.created_at,
         createdBy: task.created_by ?? undefined,
-        secrets,
+        state: this.getState(task),
       };
+
+      this.events?.publish({
+        topic: 'scaffolder.task',
+        eventPayload: ret,
+      });
+
+      const secrets = this.parseTaskSecrets(task);
+      return { ...ret, secrets };
     });
   }
 
@@ -347,11 +431,25 @@ export class DatabaseTaskStore implements TaskStore {
           );
         }
 
-        await tx<RawDbTaskEventRow>('task_events').insert({
-          task_id: taskId,
-          event_type: 'completion',
-          body: JSON.stringify(eventBody),
+        this.events?.publish({
+          topic: 'scaffolder.task',
+          eventPayload: {
+            id: taskId,
+            status: status,
+            lastHeartbeatAt: task.last_heartbeat_at,
+            createdAt: task.created_at,
+            createdBy: task.created_by,
+            state: this.getState(task),
+          },
         });
+
+        await tx<RawDbTaskEventRow>('task_events')
+          .insert({
+            task_id: taskId,
+            event_type: 'completion',
+            body: JSON.stringify(eventBody),
+          })
+          .returning('id');
       };
 
       if (status === 'cancelled') {
@@ -387,17 +485,45 @@ export class DatabaseTaskStore implements TaskStore {
   ): Promise<void> {
     const { taskId, body } = options;
     const serializedBody = JSON.stringify(body);
-    await this.db<RawDbTaskEventRow>('task_events').insert({
-      task_id: taskId,
-      event_type: 'log',
-      body: serializedBody,
-    });
+    await this.db<RawDbTaskEventRow>('task_events')
+      .insert({
+        task_id: taskId,
+        event_type: 'log',
+        body: serializedBody,
+      })
+      .returning('id');
+  }
+
+  async getTaskState({ taskId }: { taskId: string }): Promise<
+    | {
+        state: JsonObject;
+      }
+    | undefined
+  > {
+    const [result] = await this.db<RawDbTaskRow>('tasks')
+      .where({ id: taskId })
+      .select('state');
+    return result.state ? JSON.parse(result.state) : undefined;
+  }
+
+  async saveTaskState(options: {
+    taskId: string;
+    state?: JsonObject;
+  }): Promise<void> {
+    if (options.state) {
+      const serializedState = JSON.stringify({ state: options.state });
+      await this.db<RawDbTaskRow>('tasks')
+        .where({ id: options.taskId })
+        .update({
+          state: serializedState,
+        });
+    }
   }
 
   async listEvents(
     options: TaskStoreListEventsOptions,
   ): Promise<{ events: SerializedTaskEvent[] }> {
-    const { taskId, after } = options;
+    const { isTaskRecoverable, taskId, after } = options;
     const rawEvents = await this.db<RawDbTaskEventRow>('task_events')
       .where({
         task_id: taskId,
@@ -415,6 +541,7 @@ export class DatabaseTaskStore implements TaskStore {
         const body = JSON.parse(event.body) as JsonObject;
         return {
           id: Number(event.id),
+          isTaskRecoverable,
           taskId,
           body,
           type: event.event_type,
@@ -469,15 +596,99 @@ export class DatabaseTaskStore implements TaskStore {
     });
   }
 
+  async rehydrateWorkspace(options: {
+    taskId: string;
+    targetPath: string;
+  }): Promise<void> {
+    const [result] = await this.db<RawDbTaskRow>('tasks')
+      .where({ id: options.taskId })
+      .select('workspace');
+
+    await restoreWorkspace({
+      path: options.targetPath,
+      buffer: result.workspace,
+    });
+  }
+
+  async cleanWorkspace({ taskId }: { taskId: string }): Promise<void> {
+    await this.db('tasks').where({ id: taskId }).update({
+      workspace: null,
+    });
+  }
+
+  async serializeWorkspace(options: {
+    path: string;
+    taskId: string;
+  }): Promise<void> {
+    if (options.path) {
+      const workspace = (await serializeWorkspace(options)).contents;
+      await this.db<RawDbTaskRow>('tasks')
+        .where({ id: options.taskId })
+        .update({
+          workspace,
+        });
+    }
+  }
+
   async cancelTask(
     options: TaskStoreEmitOptions<{ message: string } & JsonObject>,
   ): Promise<void> {
     const { taskId, body } = options;
     const serializedBody = JSON.stringify(body);
-    await this.db<RawDbTaskEventRow>('task_events').insert({
-      task_id: taskId,
-      event_type: 'cancelled',
-      body: serializedBody,
+    const [ret] = await this.db<RawDbTaskEventRow>('task_events')
+      .insert({
+        task_id: taskId,
+        event_type: 'cancelled',
+        body: serializedBody,
+      })
+      .returning('id');
+
+    this.events?.publish({
+      topic: 'scaffolder.task',
+      eventPayload: {
+        id: ret.id,
+        taskId,
+        status: 'cancelled',
+        body,
+      },
+    });
+  }
+
+  async retryTask?(options: { taskId: string }): Promise<void> {
+    await this.db.transaction(async tx => {
+      const result = await tx<RawDbTaskRow>('tasks')
+        .where('id', options.taskId)
+        .update(
+          {
+            status: 'open',
+            last_heartbeat_at: this.db.fn.now(),
+          },
+          ['id', 'spec'],
+        );
+
+      for (const { id, spec } of result) {
+        const taskSpec = JSON.parse(spec as string) as TaskSpec;
+
+        /**
+         * Once task is picked up, all event types are replayed.
+         * We have to remove cancelled or completion event_type as these are as actions for frontend to perform.
+         * In contrary, we send 'recovered' event_type to reset the state on the frontend side.
+         *
+         */
+        await tx<RawDbTaskEventRow>('task_events')
+          .where('task_id', id)
+          .andWhere(q => q.whereIn('event_type', ['cancelled', 'completion']))
+          .del();
+
+        await tx<RawDbTaskEventRow>('task_events').insert({
+          task_id: id,
+          event_type: 'recovered',
+          body: JSON.stringify({
+            recoverStrategy:
+              taskSpec.EXPERIMENTAL_recovery?.EXPERIMENTAL_strategy ?? 'none',
+          }),
+        });
+      }
     });
   }
 
@@ -505,13 +716,26 @@ export class DatabaseTaskStore implements TaskStore {
 
       for (const { id, spec } of result) {
         const taskSpec = JSON.parse(spec as string) as TaskSpec;
-        await this.db<RawDbTaskEventRow>('task_events').insert({
-          task_id: id,
-          event_type: 'recovered',
-          body: JSON.stringify({
-            recoverStrategy:
-              taskSpec.EXPERIMENTAL_recovery?.EXPERIMENTAL_strategy ?? 'none',
-          }),
+        const event = {
+          recoverStrategy:
+            taskSpec.EXPERIMENTAL_recovery?.EXPERIMENTAL_strategy ?? 'none',
+        };
+        const [ret] = await tx<RawDbTaskEventRow>('task_events')
+          .insert({
+            task_id: id,
+            event_type: 'recovered',
+            body: JSON.stringify(event),
+          })
+          .returning('id');
+
+        this.events?.publish({
+          topic: 'scaffolder.task',
+          eventPayload: {
+            id: ret.id,
+            taskId: id,
+            status: 'recovered',
+            body: event,
+          },
         });
       }
     });

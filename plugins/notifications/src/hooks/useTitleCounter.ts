@@ -14,42 +14,53 @@
  * limitations under the License.
  */
 import { useCallback, useEffect, useState } from 'react';
+import throttle from 'lodash/throttle';
 
-/** @public */
+const getPrefix = (value: number) => (value === 0 ? '' : `(${value}) `);
+
+const cleanTitle = (currentTitle: string) =>
+  currentTitle.replace(/^\(\d+\)\s/, '');
+
+const throttledSetTitle = throttle((shownTitle: string) => {
+  document.title = shownTitle;
+}, 100);
+
+/** @internal */
 export function useTitleCounter() {
   const [title, setTitle] = useState(document.title);
   const [count, setCount] = useState(0);
 
-  const getPrefix = (value: number) => {
-    return value === 0 ? '' : `(${value}) `;
-  };
-
-  const cleanTitle = (currentTitle: string) => {
-    return currentTitle.replace(/^\(\d+\)\s/, '');
-  };
-
-  useEffect(() => {
-    document.title = title;
-  }, [title]);
-
   useEffect(() => {
     const baseTitle = cleanTitle(title);
-    setTitle(`${getPrefix(count)}${baseTitle}`);
+    const shownTitle = `${getPrefix(count)}${baseTitle}`;
+    if (document.title !== shownTitle) {
+      throttledSetTitle(shownTitle);
+    }
     return () => {
       document.title = cleanTitle(title);
     };
-  }, [title, count]);
+  }, [count, title]);
 
-  const titleElement = document.querySelector('title');
-  if (titleElement) {
-    new MutationObserver(() => {
-      setTitle(document.title);
-    }).observe(titleElement, {
-      subtree: true,
-      characterData: true,
-      childList: true,
-    });
-  }
+  useEffect(() => {
+    const titleElement = document.querySelector('title');
+    let observer: MutationObserver | undefined;
+    if (titleElement) {
+      observer = new MutationObserver(mutations => {
+        if (mutations?.[0]?.target?.textContent) {
+          setTitle(mutations[0].target.textContent);
+        }
+      });
+      observer.observe(titleElement, {
+        characterData: true,
+        childList: true,
+      });
+    }
+    return () => {
+      if (observer) {
+        observer.disconnect();
+      }
+    };
+  }, []);
 
   const setNotificationCount = useCallback(
     (newCount: number) => setCount(newCount),

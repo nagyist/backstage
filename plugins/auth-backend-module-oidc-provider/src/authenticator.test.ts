@@ -23,7 +23,7 @@ import {
 } from '@backstage/plugin-auth-node';
 import { oidcAuthenticator } from './authenticator';
 import { setupServer } from 'msw/node';
-import { setupRequestMockHandlers } from '@backstage/backend-test-utils';
+import { registerMswTestHooks } from '@backstage/backend-test-utils';
 import { ConfigReader } from '@backstage/config';
 import { JWK, SignJWT, exportJWK, generateKeyPair } from 'jose';
 import { rest } from 'msw';
@@ -32,11 +32,13 @@ import express from 'express';
 describe('oidcAuthenticator', () => {
   let implementation: any;
   let oauthState: OAuthState;
+  let nonce: string;
   let idToken: string;
   let publicKey: JWK;
+  const revokedTokenMap: Record<string, boolean> = {};
 
   const mswServer = setupServer();
-  setupRequestMockHandlers(mswServer);
+  registerMswTestHooks(mswServer);
 
   const issuerMetadata = {
     issuer: 'https://oidc.test',
@@ -64,23 +66,6 @@ describe('oidcAuthenticator', () => {
     request_object_signing_alg_values_supported: ['RS256', 'RS512', 'HS256'],
   };
 
-  beforeAll(async () => {
-    const keyPair = await generateKeyPair('RS256');
-    const privateKey = await exportJWK(keyPair.privateKey);
-    publicKey = await exportJWK(keyPair.publicKey);
-    publicKey.alg = privateKey.alg = 'RS256';
-
-    idToken = await new SignJWT({
-      sub: 'test',
-      iss: 'https://oidc.test',
-      iat: Date.now(),
-      aud: 'clientId',
-      exp: Date.now() + 10000,
-    })
-      .setProtectedHeader({ alg: privateKey.alg, kid: privateKey.kid })
-      .sign(keyPair.privateKey);
-  });
-
   beforeEach(() => {
     mswServer.use(
       rest.get(
@@ -95,7 +80,39 @@ describe('oidcAuthenticator', () => {
       rest.get('https://oidc.test/jwks.json', async (_req, res, ctx) =>
         res(ctx.status(200), ctx.json({ keys: [{ ...publicKey }] })),
       ),
+      rest.get(
+        'https://oidc.test/oauth2/authorize',
+        async (req, _res, _ctx) => {
+          nonce =
+            new URL(req.url).searchParams.get('nonce') ??
+            'nonceGeneratedByAuthServer';
+        },
+      ),
       rest.post('https://oidc.test/oauth2/token', async (req, res, ctx) => {
+        const formBody = new URLSearchParams(await req.text());
+        if (
+          formBody.get('grant_type') === 'refresh_token' &&
+          revokedTokenMap[formBody.get('refresh_token') as string]
+        ) {
+          return res(ctx.json({}));
+        }
+
+        const keyPair = await generateKeyPair('RS256');
+        const privateKey = await exportJWK(keyPair.privateKey);
+        publicKey = await exportJWK(keyPair.publicKey);
+        publicKey.alg = privateKey.alg = 'RS256';
+
+        idToken = await new SignJWT({
+          sub: 'test',
+          iss: 'https://oidc.test',
+          iat: Date.now(),
+          aud: 'clientId',
+          exp: Date.now() + 10000,
+          nonce,
+        })
+          .setProtectedHeader({ alg: privateKey.alg, kid: privateKey.kid })
+          .sign(keyPair.privateKey);
+
         return res(
           req.headers.get('Authorization')
             ? ctx.json({
@@ -122,6 +139,14 @@ describe('oidcAuthenticator', () => {
               picture: 'http://testPictureUrl/photo.jpg',
             }),
           ),
+      ),
+      rest.post(
+        'https://oidc.test/oauth2/revoke_token',
+        async (req, res, ctx) => {
+          const formBody = new URLSearchParams(await req.text());
+          revokedTokenMap[formBody.get('token') as string] = true;
+          return res(ctx.status(200));
+        },
       ),
     );
 
@@ -182,6 +207,15 @@ describe('oidcAuthenticator', () => {
       expect(searchParams.get('response_type')).toBe('code');
     });
 
+    it('passes a nonce', async () => {
+      const startResponse = await oidcAuthenticator.start(
+        startRequest,
+        implementation,
+      );
+      const { searchParams } = new URL(startResponse.url);
+      expect(searchParams.get('nonce')).not.toBeNull();
+    });
+
     it('passes client ID from config', async () => {
       const startResponse = await oidcAuthenticator.start(
         startRequest,
@@ -218,19 +252,6 @@ describe('oidcAuthenticator', () => {
     it('stores PKCE verifier in session', async () => {
       await oidcAuthenticator.start(startRequest, implementation);
       expect(fakeSession['oidc:oidc.test'].code_verifier).toBeDefined();
-    });
-
-    it('requests default scopes if none are provided in config', async () => {
-      const startResponse = await oidcAuthenticator.start(
-        startRequest,
-        implementation,
-      );
-      const { searchParams } = new URL(startResponse.url);
-      const scopes = searchParams.get('scope')?.split(' ') ?? [];
-
-      expect(scopes).toEqual(
-        expect.arrayContaining(['openid', 'profile', 'email']),
-      );
     });
 
     it('encodes OAuth state in query param', async () => {
@@ -432,6 +453,79 @@ describe('oidcAuthenticator', () => {
       );
 
       expect(refreshResponse.session.idToken).toBe(idToken);
+    });
+  });
+
+  describe('#logout', () => {
+    it('should revoke refreshToken', async () => {
+      const refreshToken = 'revokeRefreshToken';
+      const refreshRequest = {
+        scope: '',
+        refreshToken,
+        req: {} as express.Request,
+      };
+      const logoutRequest = {
+        refreshToken,
+        req: {} as express.Request,
+      };
+
+      await oidcAuthenticator.logout?.(logoutRequest, implementation);
+
+      const refreshResponse = oidcAuthenticator.refresh(
+        refreshRequest,
+        implementation,
+      );
+
+      await expect(refreshResponse).rejects.toEqual(
+        new Error('Refresh failed'),
+      );
+    });
+
+    it('should not revoke refreshToken when issuer revocation_endpoint is undefined', async () => {
+      const refreshToken = 'revokeRefreshToken2';
+      const refreshRequest = {
+        scope: 'testScope',
+        refreshToken,
+        req: {} as express.Request,
+      };
+      const logoutRequest = {
+        refreshToken,
+        req: {} as express.Request,
+      };
+
+      // override .well-known endpoint response, set revocation_endpoint to undefined
+      mswServer.use(
+        rest.get(
+          'https://oidc.test/.well-known/openid-configuration',
+          (_req, res, ctx) =>
+            res(
+              ctx.status(200),
+              ctx.set('Content-Type', 'application/json'),
+              ctx.json({
+                ...issuerMetadata,
+                revocation_endpoint: undefined,
+              }),
+            ),
+        ),
+      );
+
+      const newImplementation = oidcAuthenticator.initialize({
+        callbackUrl: 'https://backstage.test/callback',
+        config: new ConfigReader({
+          metadataUrl: 'https://oidc.test/.well-known/openid-configuration',
+          clientId: 'clientId',
+          clientSecret: 'clientSecret',
+        }),
+      });
+
+      await oidcAuthenticator.logout?.(logoutRequest, newImplementation);
+
+      const refreshResponse = await oidcAuthenticator.refresh(
+        refreshRequest,
+        newImplementation,
+      );
+
+      expect(refreshResponse.session.refreshToken).toBe('refreshToken');
     });
   });
 });

@@ -14,7 +14,8 @@
  * limitations under the License.
  */
 
-import { UrlReader, resolveSafeChildPath } from '@backstage/backend-common';
+import { UrlReaderService } from '@backstage/backend-plugin-api';
+import { resolveSafeChildPath } from '@backstage/backend-plugin-api';
 import { ScmIntegrations } from '@backstage/integration';
 import { examples } from './plainFile.examples';
 import {
@@ -28,7 +29,7 @@ import {
  * @public
  */
 export function createFetchPlainFileAction(options: {
-  reader: UrlReader;
+  reader: UrlReaderService;
   integrations: ScmIntegrations;
 }) {
   const { reader, integrations } = options;

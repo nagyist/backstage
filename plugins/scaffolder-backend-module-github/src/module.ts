@@ -17,7 +17,10 @@ import {
   coreServices,
   createBackendModule,
 } from '@backstage/backend-plugin-api';
-import { scaffolderActionsExtensionPoint } from '@backstage/plugin-scaffolder-node/alpha';
+import {
+  scaffolderActionsExtensionPoint,
+  scaffolderAutocompleteExtensionPoint,
+} from '@backstage/plugin-scaffolder-node/alpha';
 import {
   createGithubActionsDispatchAction,
   createGithubAutolinksAction,
@@ -29,11 +32,15 @@ import {
   createGithubWebhookAction,
   createPublishGithubAction,
   createPublishGithubPullRequestAction,
+  createGithubPagesEnableAction,
+  createGithubBranchProtectionAction,
 } from './actions';
 import {
   DefaultGithubCredentialsProvider,
   ScmIntegrations,
 } from '@backstage/integration';
+import { CatalogClient } from '@backstage/catalog-client';
+import { createHandleAutocompleteRequest } from './autocomplete/autocomplete';
 
 /**
  * @public
@@ -47,11 +54,17 @@ export const githubModule = createBackendModule({
       deps: {
         scaffolder: scaffolderActionsExtensionPoint,
         config: coreServices.rootConfig,
+        discovery: coreServices.discovery,
+        auth: coreServices.auth,
+        autocomplete: scaffolderAutocompleteExtensionPoint,
       },
-      async init({ scaffolder, config }) {
+      async init({ scaffolder, config, discovery, auth, autocomplete }) {
         const integrations = ScmIntegrations.fromConfig(config);
         const githubCredentialsProvider =
           DefaultGithubCredentialsProvider.fromIntegrations(integrations);
+        const catalogClient = new CatalogClient({
+          discoveryApi: discovery,
+        });
 
         scaffolder.addActions(
           createGithubActionsDispatchAction({
@@ -67,6 +80,8 @@ export const githubModule = createBackendModule({
           }),
           createGithubEnvironmentAction({
             integrations,
+            catalogClient,
+            auth,
           }),
           createGithubIssuesLabelAction({
             integrations,
@@ -89,8 +104,21 @@ export const githubModule = createBackendModule({
           createPublishGithubPullRequestAction({
             integrations,
             githubCredentialsProvider,
+            config,
+          }),
+          createGithubPagesEnableAction({
+            integrations,
+            githubCredentialsProvider,
+          }),
+          createGithubBranchProtectionAction({
+            integrations,
           }),
         );
+
+        autocomplete.addAutocompleteProvider({
+          id: 'github',
+          handler: createHandleAutocompleteRequest({ integrations }),
+        });
       },
     });
   },

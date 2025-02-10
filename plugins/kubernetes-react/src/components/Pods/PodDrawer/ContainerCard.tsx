@@ -15,14 +15,12 @@
  */
 import { StructuredMetadataTable } from '@backstage/core-components';
 import { ClientContainerStatus } from '@backstage/plugin-kubernetes-common';
-import {
-  Card,
-  CardActions,
-  CardContent,
-  CardHeader,
-  Grid,
-  Typography,
-} from '@material-ui/core';
+import Card from '@material-ui/core/Card';
+import CardActions from '@material-ui/core/CardActions';
+import CardContent from '@material-ui/core/CardContent';
+import CardHeader from '@material-ui/core/CardHeader';
+import Grid from '@material-ui/core/Grid';
+import Typography from '@material-ui/core/Typography';
 import { IContainer, IContainerStatus } from 'kubernetes-models/v1';
 import { DateTime } from 'luxon';
 import React from 'react';
@@ -37,20 +35,25 @@ const getContainerHealthChecks = (
   containerSpec: IContainer,
   containerStatus: IContainerStatus,
 ): { [key: string]: boolean } => {
-  if (containerStatus.state?.terminated?.reason === 'Completed') {
-    return {
-      'not waiting to start': containerStatus.state?.waiting === undefined,
-      'no restarts': containerStatus.restartCount === 0,
-    };
-  }
-  return {
+  const healthCheck = {
     'not waiting to start': containerStatus.state?.waiting === undefined,
-    started: !!containerStatus.started,
-    ready: containerStatus.ready,
     'no restarts': containerStatus.restartCount === 0,
-    'readiness probe set':
-      containerSpec && containerSpec?.readinessProbe !== undefined,
   };
+  if (containerStatus.state?.terminated?.reason === 'Completed') {
+    return healthCheck;
+  }
+  Object.assign(
+    healthCheck,
+    { started: !!containerStatus.started },
+    { ready: containerStatus.ready },
+    { 'readiness probe set': containerSpec?.readinessProbe !== undefined },
+  );
+  if (containerSpec && containerSpec?.livenessProbe !== undefined) {
+    Object.assign(healthCheck, {
+      'liveness probe set': containerSpec.livenessProbe,
+    });
+  }
+  return healthCheck;
 };
 
 const getCurrentState = (containerStatus: IContainerStatus): string => {
@@ -173,6 +176,7 @@ export const ContainerCard: React.FC<ContainerCardProps> = ({
                 containerSpec,
                 containerStatus,
               )}
+              options={{ nestedValuesAsYaml: true }}
             />
           </Grid>
           {containerMetrics && (
@@ -233,7 +237,7 @@ export const ContainerCard: React.FC<ContainerCardProps> = ({
         />
         {isPodExecTerminalEnabled && (
           <PodExecTerminalDialog
-            clusterName={podScope.clusterName}
+            cluster={podScope.cluster}
             containerName={containerStatus.name}
             podName={podScope.podName}
             podNamespace={podScope.podNamespace}

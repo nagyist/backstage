@@ -14,13 +14,14 @@
  * limitations under the License.
  */
 
-import {
-  createBackendPlugin,
-  coreServices,
-} from '@backstage/backend-plugin-api';
 import { loggerToWinstonLogger } from '@backstage/backend-common';
+import {
+  coreServices,
+  createBackendPlugin,
+} from '@backstage/backend-plugin-api';
 import { ScmIntegrations } from '@backstage/integration';
 import { catalogServiceRef } from '@backstage/plugin-catalog-node/alpha';
+import { eventsServiceRef } from '@backstage/plugin-events-node';
 import {
   TaskBroker,
   TemplateAction,
@@ -28,9 +29,13 @@ import {
   TemplateGlobal,
 } from '@backstage/plugin-scaffolder-node';
 import {
+  AutocompleteHandler,
   scaffolderActionsExtensionPoint,
+  scaffolderAutocompleteExtensionPoint,
   scaffolderTaskBrokerExtensionPoint,
   scaffolderTemplatingExtensionPoint,
+  scaffolderWorkspaceProviderExtensionPoint,
+  WorkspaceProvider,
 } from '@backstage/plugin-scaffolder-node/alpha';
 import {
   createCatalogRegisterAction,
@@ -40,7 +45,9 @@ import {
   createFetchPlainAction,
   createFetchPlainFileAction,
   createFetchTemplateAction,
+  createFetchTemplateFileAction,
   createFilesystemDeleteAction,
+  createFilesystemReadDirAction,
   createFilesystemRenameAction,
   createWaitAction,
 } from './scaffolder';
@@ -49,7 +56,7 @@ import { createRouter } from './service/router';
 /**
  * Scaffolder plugin
  *
- * @alpha
+ * @public
  */
 export const scaffolderPlugin = createBackendPlugin({
   pluginId: 'scaffolder',
@@ -82,6 +89,20 @@ export const scaffolderPlugin = createBackendPlugin({
       },
     });
 
+    const autocompleteHandlers: Record<string, AutocompleteHandler> = {};
+    env.registerExtensionPoint(scaffolderAutocompleteExtensionPoint, {
+      addAutocompleteProvider(provider) {
+        autocompleteHandlers[provider.id] = provider.handler;
+      },
+    });
+
+    const additionalWorkspaceProviders: Record<string, WorkspaceProvider> = {};
+    env.registerExtensionPoint(scaffolderWorkspaceProviderExtensionPoint, {
+      addProviders(provider) {
+        Object.assign(additionalWorkspaceProviders, provider);
+      },
+    });
+
     env.registerInit({
       deps: {
         logger: coreServices.logger,
@@ -90,8 +111,13 @@ export const scaffolderPlugin = createBackendPlugin({
         reader: coreServices.urlReader,
         permissions: coreServices.permissions,
         database: coreServices.database,
+        auth: coreServices.auth,
+        discovery: coreServices.discovery,
         httpRouter: coreServices.httpRouter,
+        httpAuth: coreServices.httpAuth,
+        auditor: coreServices.auditor,
         catalogClient: catalogServiceRef,
+        events: eventsServiceRef,
       },
       async init({
         logger,
@@ -99,9 +125,14 @@ export const scaffolderPlugin = createBackendPlugin({
         lifecycle,
         reader,
         database,
+        auth,
+        discovery,
         httpRouter,
+        httpAuth,
         catalogClient,
         permissions,
+        events,
+        auditor,
       }) {
         const log = loggerToWinstonLogger(logger);
         const integrations = ScmIntegrations.fromConfig(config);
@@ -125,14 +156,21 @@ export const scaffolderPlugin = createBackendPlugin({
             additionalTemplateFilters,
             additionalTemplateGlobals,
           }),
+          createFetchTemplateFileAction({
+            integrations,
+            reader,
+            additionalTemplateFilters,
+            additionalTemplateGlobals,
+          }),
           createDebugLogAction(),
           createWaitAction(),
           // todo(blam): maybe these should be a -catalog module?
-          createCatalogRegisterAction({ catalogClient, integrations }),
-          createFetchCatalogEntityAction({ catalogClient }),
+          createCatalogRegisterAction({ catalogClient, integrations, auth }),
+          createFetchCatalogEntityAction({ catalogClient, auth }),
           createCatalogWriteAction(),
           createFilesystemDeleteAction(),
           createFilesystemRenameAction(),
+          createFilesystemReadDirAction(),
         ];
 
         const actionIds = actions.map(action => action.id).join(', ');
@@ -152,7 +190,14 @@ export const scaffolderPlugin = createBackendPlugin({
           taskBroker,
           additionalTemplateFilters,
           additionalTemplateGlobals,
+          auth,
+          httpAuth,
+          discovery,
           permissions,
+          autocompleteHandlers,
+          additionalWorkspaceProviders,
+          events,
+          auditor,
         });
         httpRouter.use(router);
       },

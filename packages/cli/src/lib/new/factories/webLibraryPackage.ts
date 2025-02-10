@@ -31,7 +31,8 @@ type Options = {
 
 export const webLibraryPackage = createFactory<Options>({
   name: 'web-library',
-  description: 'A new web-library package',
+  description:
+    'A new web-library package, exporting shared functionality for frontend plugins',
   optionsDiscovery: async () => ({
     codeOwnersPath: await getCodeownersFilePath(paths.targetRoot),
   }),
@@ -60,6 +61,7 @@ export const webLibraryPackage = createFactory<Options>({
         pluginVersion: ctx.defaultVersion,
         privatePackage: ctx.private,
         npmRegistry: ctx.npmRegistry,
+        license: ctx.license,
       },
     });
 

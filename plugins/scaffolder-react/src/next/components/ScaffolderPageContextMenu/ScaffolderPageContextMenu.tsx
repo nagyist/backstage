@@ -27,6 +27,9 @@ import Edit from '@material-ui/icons/Edit';
 import List from '@material-ui/icons/List';
 import MoreVert from '@material-ui/icons/MoreVert';
 import React, { useState } from 'react';
+import { usePermission } from '@backstage/plugin-permission-react';
+import { taskReadPermission } from '@backstage/plugin-scaffolder-common/alpha';
+import { templateManagementPermission } from '@backstage/plugin-scaffolder-common/alpha';
 
 const useStyles = makeStyles(theme => ({
   button: {
@@ -55,7 +58,20 @@ export function ScaffolderPageContextMenu(
   const classes = useStyles();
   const [anchorEl, setAnchorEl] = useState<HTMLButtonElement>();
 
-  if (!onEditorClicked && !onActionsClicked) {
+  const { allowed: canReadTasks } = usePermission({
+    permission: taskReadPermission,
+  });
+
+  const { allowed: canManageTemplates } = usePermission({
+    permission: templateManagementPermission,
+  });
+
+  if (
+    !onEditorClicked &&
+    !onActionsClicked &&
+    !onTasksClicked &&
+    !onCreateClicked
+  ) {
     return null;
   }
 
@@ -100,12 +116,12 @@ export function ScaffolderPageContextMenu(
               <ListItemText primary="Create" />
             </MenuItem>
           )}
-          {onEditorClicked && (
+          {onEditorClicked && canManageTemplates && (
             <MenuItem onClick={onEditorClicked}>
               <ListItemIcon>
                 <Edit fontSize="small" />
               </ListItemIcon>
-              <ListItemText primary="Template Editor" />
+              <ListItemText primary="Manage Templates" />
             </MenuItem>
           )}
           {onActionsClicked && (
@@ -116,7 +132,7 @@ export function ScaffolderPageContextMenu(
               <ListItemText primary="Installed Actions" />
             </MenuItem>
           )}
-          {onTasksClicked && (
+          {onTasksClicked && canReadTasks && (
             <MenuItem onClick={onTasksClicked}>
               <ListItemIcon>
                 <List fontSize="small" />

@@ -18,7 +18,15 @@ import AsyncApi from '@asyncapi/react-component';
 import '@asyncapi/react-component/styles/default.css';
 import { makeStyles, alpha, darken } from '@material-ui/core/styles';
 import React from 'react';
-import { useTheme } from '@material-ui/core';
+import { useTheme } from '@material-ui/core/styles';
+
+/** @public */
+export type AsyncApiResolver = {
+  schema: string;
+  order: number;
+  canRead: boolean;
+  read(uri: any): Promise<string>;
+};
 
 const useStyles = makeStyles(theme => ({
   root: {
@@ -143,7 +151,7 @@ const useStyles = makeStyles(theme => ({
   },
 }));
 
-const httpsFetchResolver = {
+const httpsFetchResolver: AsyncApiResolver = {
   schema: 'https',
   order: 1,
   canRead: true,
@@ -153,7 +161,7 @@ const httpsFetchResolver = {
   },
 };
 
-const httpFetchResolver = {
+const httpFetchResolver: AsyncApiResolver = {
   schema: 'http',
   order: 1,
   canRead: true,
@@ -163,26 +171,35 @@ const httpFetchResolver = {
   },
 };
 
-const config = {
-  parserOptions: {
-    __unstable: {
-      resolver: {
-        resolvers: [httpsFetchResolver, httpFetchResolver],
-      },
-    },
-  },
-};
-
 type Props = {
   definition: string;
+  resolvers?: AsyncApiResolver[];
 };
 
-export const AsyncApiDefinition = ({ definition }: Props): JSX.Element => {
+export const AsyncApiDefinition = ({
+  definition,
+  resolvers,
+}: Props): JSX.Element => {
   const classes = useStyles();
   const theme = useTheme();
   const classNames = `${classes.root} ${
     theme.palette.type === 'dark' ? classes.dark : ''
   }`;
+
+  const config = {
+    parserOptions: {
+      __unstable: {
+        resolver: {
+          resolvers: [httpsFetchResolver, httpFetchResolver],
+        },
+      },
+    },
+  };
+
+  // Overwrite default resolvers if custom ones are set
+  if (resolvers) {
+    config.parserOptions.__unstable.resolver.resolvers = resolvers;
+  }
 
   return (
     <div className={classNames}>

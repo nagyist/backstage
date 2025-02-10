@@ -22,10 +22,10 @@ import {
   getRepoSourceDirectory,
   parseRepoUrl,
 } from '@backstage/plugin-scaffolder-node';
-import fetch, { Response, RequestInit } from 'node-fetch';
 
 import { Config } from '@backstage/config';
 import { getAuthorizationHeader } from './helpers';
+import { examples } from './bitbucketCloud.examples';
 
 const createRepository = async (opts: {
   workspace: string;
@@ -110,10 +110,12 @@ export function createPublishBitbucketCloudAction(options: {
     description?: string;
     defaultBranch?: string;
     repoVisibility?: 'private' | 'public';
+    gitCommitMessage?: string;
     sourcePath?: string;
     token?: string;
   }>({
     id: 'publish:bitbucketCloud',
+    examples,
     description:
       'Initializes a git repository of the content in the workspace, and publishes it to Bitbucket Cloud.',
     schema: {
@@ -138,6 +140,11 @@ export function createPublishBitbucketCloudAction(options: {
             title: 'Default Branch',
             type: 'string',
             description: `Sets the default branch on the repository. The default value is 'master'`,
+          },
+          gitCommitMessage: {
+            title: 'Git Commit Message',
+            type: 'string',
+            description: `Sets the commit message on the repository. The default value is 'initial commit'`,
           },
           sourcePath: {
             title: 'Source Path',
@@ -176,6 +183,7 @@ export function createPublishBitbucketCloudAction(options: {
         repoUrl,
         description,
         defaultBranch = 'master',
+        gitCommitMessage,
         repoVisibility = 'private',
       } = ctx.input;
 
@@ -254,9 +262,9 @@ export function createPublishBitbucketCloudAction(options: {
         auth,
         defaultBranch,
         logger: ctx.logger,
-        commitMessage: config.getOptionalString(
-          'scaffolder.defaultCommitMessage',
-        ),
+        commitMessage:
+          gitCommitMessage ||
+          config.getOptionalString('scaffolder.defaultCommitMessage'),
         gitAuthorInfo,
       });
 

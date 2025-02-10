@@ -17,6 +17,9 @@ The following is a full example entry in `app-config.yaml`:
 
 ```yaml
 kubernetes:
+  frontend:
+    podDelete:
+      enabled: true
   serviceLocatorMethod:
     type: 'multiTenant'
   clusterLocatorMethods:
@@ -38,6 +41,7 @@ kubernetes:
               plural: 'rollouts'
         - url: http://127.0.0.2:9999
           name: aws-cluster-1
+          title: 'My AWS Cluster Number One'
           authProvider: 'aws'
     - type: 'gke'
       projectId: 'gke-clusters'
@@ -45,6 +49,71 @@ kubernetes:
       skipTLSVerify: true
       skipMetricsLookup: true
       exposeDashboard: true
+```
+
+### `frontend` (optional)
+
+This is an array used to configure some frontend features.
+
+Valid values are:
+
+- `podDelete`
+
+#### `podDelete` (optional)
+
+This configures the behavior of the delete pod button in the container panel.
+
+Valid configurations are:
+
+- `enabled`
+
+##### `enabled`
+
+This configuration controls the visibility of this feature.
+
+Valid values are:
+
+- `true`
+- `false`
+
+The default value is `false`.
+
+#### Internationalization
+
+To customize or translate text in some of the components, use the following approach:
+
+```js
+import { createTranslationMessages } from '@backstage/core-plugin-api/alpha';
+import { kubernetesReactTranslationRef } from '@backstage/plugin-kubernetes-react/alpha';
+import { kubernetesTranslationRef } from '@backstage/plugin-kubernetes/alpha';
+import { kubernetesClusterTranslationRef } from '@backstage/plugin-kubernetes-cluster/alpha';
+
+const app = createApp({
+  __experimentalTranslations: {
+    resources: [
+      createTranslationMessages({
+        ref: kubernetesReactTranslationRef,
+        messages: {
+          "podDrawer.buttons.delete": 'Restart Pod'
+        }
+      }),
+      createTranslationMessages({
+        ref: kubernetesTranslationRef,
+        messages: {
+          'kubernetesContentPage.permissionAlert.title': 'Insufficient permissions',
+          'kubernetesContentPage.permissionAlert.message': 'You do not have permissions to view Kubernetes objects.',
+        },
+      }),
+      createTranslationMessages({
+        ref: kubernetesClusterTranslationRef,
+        messages: {
+          'kubernetesClusterContentPage.permissionAlert.title': 'Insufficient permissions',
+          'kubernetesClusterContentPage.permissionAlert.message': 'You do not have permissions to view Kubernetes objects.',
+        },
+      }),
+    ]
+  },
+  ...
 ```
 
 ### `serviceLocatorMethod`
@@ -57,6 +126,8 @@ Valid values are:
   provided clusters.
 
 - `singleTenant` - This configuration assumes that current component run on one cluster in provided clusters.
+
+- `catalogRelation` - This configuration assumes that the current component runs only on all clusters it is dependant on.
 
 ### `clusterLocatorMethods`
 
@@ -151,6 +222,11 @@ The base URL to the Kubernetes control plane. Can be found by using the
 A name to represent this cluster, this must be unique within the `clusters`
 array. Users will see this value in the Software Catalog Kubernetes plugin.
 
+##### `clusters.\*.title`
+
+A human-readable name for the cluster. This value will override the `name` field
+for the purposes of display in the catalog.
+
 ##### `clusters.\*.authProvider`
 
 This determines how the Kubernetes client authenticates with the Kubernetes
@@ -190,8 +266,7 @@ in namespace `NAMESPACE` and it has adequate
 [permissions](#role-based-access-control), here are some sample procedures to
 procure a long-lived service account token for use with this provider:
 
-- On versions of Kubernetes [prior to
-  1.24](https://github.com/kubernetes/kubernetes/blob/master/CHANGELOG/CHANGELOG-1.24.md#no-really-you-must-read-this-before-you-upgrade-1),
+- On versions of Kubernetes [prior to 1.24](https://github.com/kubernetes/kubernetes/blob/master/CHANGELOG/CHANGELOG-1.24.md#no-really-you-must-read-this-before-you-upgrade-1),
   you could get an (automatically-generated) token for a service account with:
 
   ```sh
@@ -201,8 +276,7 @@ procure a long-lived service account token for use with this provider:
   | base64 --decode
   ```
 
-- For Kubernetes 1.24+, as described in [this
-  guide](https://kubernetes.io/docs/concepts/configuration/secret/#service-account-token-secrets),
+- For Kubernetes 1.24+, as described in [this guide](https://kubernetes.io/docs/concepts/configuration/secret/#service-account-token-secrets),
   you can obtain a long-lived token by creating a secret:
 
   ```sh
@@ -227,8 +301,7 @@ procure a long-lived service account token for use with this provider:
 If a cluster has `authProvider: serviceAccount` and the `serviceAccountToken`
 field is omitted, Backstage will ignore the configured URL and certificate data,
 instead attempting to access the Kubernetes API via an in-cluster client as in
-[this
-example](https://github.com/kubernetes-client/javascript/blob/master/examples/in-cluster.js).
+[this example](https://github.com/kubernetes-client/javascript/blob/master/examples/in-cluster.js).
 
 ##### `clusters.\*.oidcTokenProvider` (optional)
 
@@ -521,23 +594,22 @@ view the Kubernetes API docs for your Kubernetes version (e.g.
 
 Overrides for the Kubernetes object types fetched from the cluster. The default object types are:
 
-- pods
-- services
-- configmaps
-- limitranges
-- resourcequotas
-- deployments
-- replicasets
-- horizontalpodautoscalers
-- jobs
-- cronjobs
-- ingresses
-- statefulsets
-- daemonsets
+- `pods`
+- `services`
+- `configmaps`
+- `limitranges`
+- `resourcequotas`
+- `deployments`
+- `replicasets`
+- `horizontalpodautoscalers`
+- `jobs`
+- `cronjobs`
+- `ingresses`
+- `statefulsets`
+- `daemonsets`
 
-You may use this config to override the default object types if you only want a subset of
-the default ones. However, it's currently not supported to fetch object types other
-than the ones specified in the default types.
+You may use this config to override the default object types if you only want specific ones.
+However, the only additional object type to fetch at the moment is `secrets`.
 
 Example:
 
@@ -551,6 +623,7 @@ kubernetes:
     - pods
     - services
     - statefulsets
+    - secrets
 ```
 
 ### Role Based Access Control
@@ -622,7 +695,7 @@ annotations:
 #### Adding the namespace annotation
 
 Entities can have the `backstage.io/kubernetes-namespace` annotation, this will cause the entity's Kubernetes resources
-to by looked up via that namespace.
+to be looked up via that namespace.
 
 ```yaml
 annotations:

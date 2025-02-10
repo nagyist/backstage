@@ -20,7 +20,7 @@ You may need to modify your Dockerfile to ensure `backstage.json` is copied into
 ```sh
 WORKDIR /app
 # This switches many Node.js dependencies to production mode.
-ENV NODE_ENV production
+ENV NODE_ENV=production
 
 # Then copy the rest of the backend bundle, along with any other files we might want (including backstage.json).
 COPY --chown=node:node ... backstage.json ./
@@ -418,8 +418,10 @@ By default, only packages with names starting with `@backstage` and `@internal` 
 devTools:
   info:
     packagePrefixes:
-      - @roadiehq/backstage-
-      - @spotify/backstage-
+      # Note that you MUST have quotes around these. The YAML won't be valid
+      # if you don't, because of the leading at-symbols.
+      - '@roadiehq/backstage-'
+      - '@spotify/backstage-'
 ```
 
 ### External Dependencies Configuration

@@ -1,12 +1,12 @@
 ---
 id: product
-title: Product FAQ
+title: Non-technical FAQ
 description: Questions related to product and design.
 ---
 
 ### Can we call Backstage something different? So that it fits our company better?
 
-Yes, Backstage is just a platform for building your own developer portal. We
+Yes, Backstage is just a framework for building your own developer portal. We
 happen to call our internal version Backstage, as well, as a reference to our
 music roots. You can call your version whatever suits your team, company, or
 brand.
@@ -37,7 +37,7 @@ more, read our blog post,
 
 Yes, we've already started releasing open source versions of some of the plugins
 we use here, and we'll continue to do so.
-[Plugins](#what-is-a-plugin-in-backstage) are the building blocks of
+[Plugins](technical.md#what-is-a-plugin-in-backstage) are the building blocks of
 functionality in Backstage. We have over 120 plugins inside Spotify — many of
 those are specialized for our use, so will remain internal and proprietary to
 us. But we estimate that about a third of our existing plugins make good open

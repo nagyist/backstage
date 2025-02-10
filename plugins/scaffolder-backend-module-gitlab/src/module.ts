@@ -17,7 +17,11 @@ import {
   coreServices,
   createBackendModule,
 } from '@backstage/backend-plugin-api';
-import { scaffolderActionsExtensionPoint } from '@backstage/plugin-scaffolder-node/alpha';
+import { ScmIntegrations } from '@backstage/integration';
+import {
+  scaffolderActionsExtensionPoint,
+  scaffolderAutocompleteExtensionPoint,
+} from '@backstage/plugin-scaffolder-node/alpha';
 import {
   createGitlabGroupEnsureExistsAction,
   createGitlabIssueAction,
@@ -27,8 +31,11 @@ import {
   createGitlabRepoPushAction,
   createPublishGitlabAction,
   createPublishGitlabMergeRequestAction,
+  createTriggerGitlabPipelineAction,
+  editGitlabIssueAction,
 } from './actions';
-import { ScmIntegrations } from '@backstage/integration';
+import { createGitlabProjectMigrateAction } from './actions/gitlabProjectMigrate';
+import { createHandleAutocompleteRequest } from './autocomplete/autocomplete';
 
 /**
  * @public
@@ -41,21 +48,30 @@ export const gitlabModule = createBackendModule({
     registerInit({
       deps: {
         scaffolder: scaffolderActionsExtensionPoint,
+        autocomplete: scaffolderAutocompleteExtensionPoint,
         config: coreServices.rootConfig,
       },
-      async init({ scaffolder, config }) {
+      async init({ scaffolder, autocomplete, config }) {
         const integrations = ScmIntegrations.fromConfig(config);
 
         scaffolder.addActions(
           createGitlabGroupEnsureExistsAction({ integrations }),
+          createGitlabProjectMigrateAction({ integrations }),
           createGitlabIssueAction({ integrations }),
           createGitlabProjectAccessTokenAction({ integrations }),
           createGitlabProjectDeployTokenAction({ integrations }),
           createGitlabProjectVariableAction({ integrations }),
           createGitlabRepoPushAction({ integrations }),
+          editGitlabIssueAction({ integrations }),
           createPublishGitlabAction({ config, integrations }),
           createPublishGitlabMergeRequestAction({ integrations }),
+          createTriggerGitlabPipelineAction({ integrations }),
         );
+
+        autocomplete.addAutocompleteProvider({
+          id: 'gitlab',
+          handler: createHandleAutocompleteRequest({ integrations }),
+        });
       },
     });
   },

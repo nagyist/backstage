@@ -20,7 +20,7 @@ import camelCase from 'lodash/camelCase';
 import { paths } from '../../paths';
 import { addCodeownersEntry, getCodeownersFilePath } from '../../codeowners';
 import { CreateContext, createFactory } from '../types';
-import { addPackageDependency, Task } from '../../tasks';
+import { addPackageDependency, addToBackend, Task } from '../../tasks';
 import {
   moduleIdIdPrompt,
   ownerPrompt,
@@ -38,7 +38,8 @@ type Options = {
 
 export const backendModule = createFactory<Options>({
   name: 'backend-module',
-  description: 'A new backend module',
+  description:
+    'A new backend module that extends an existing backend plugin with additional features',
   optionsDiscovery: async () => ({
     codeOwnersPath: await getCodeownersFilePath(paths.targetRoot),
   }),
@@ -74,6 +75,7 @@ export const backendModule = createFactory<Options>({
         packageVersion: ctx.defaultVersion,
         privatePackage: ctx.private,
         npmRegistry: ctx.npmRegistry,
+        license: ctx.license,
       },
     });
 
@@ -89,6 +91,10 @@ export const backendModule = createFactory<Options>({
         );
       });
     }
+
+    await addToBackend(name, {
+      type: 'module',
+    });
 
     if (options.owner) {
       await addCodeownersEntry(`/plugins/${dirName}`, options.owner);

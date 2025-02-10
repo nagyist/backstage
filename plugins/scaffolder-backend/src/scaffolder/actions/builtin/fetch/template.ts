@@ -15,21 +15,20 @@
  */
 
 import { extname } from 'path';
-import { resolveSafeChildPath, UrlReader } from '@backstage/backend-common';
+import { UrlReaderService } from '@backstage/backend-plugin-api';
+import { resolveSafeChildPath } from '@backstage/backend-plugin-api';
 import { InputError } from '@backstage/errors';
 import { ScmIntegrations } from '@backstage/integration';
 import {
   createTemplateAction,
   fetchContents,
+  TemplateFilter,
+  TemplateGlobal,
 } from '@backstage/plugin-scaffolder-node';
 import globby from 'globby';
 import fs from 'fs-extra';
 import { isBinaryFile } from 'isbinaryfile';
-import {
-  TemplateFilter,
-  SecureTemplater,
-  TemplateGlobal,
-} from '../../../../lib/templating/SecureTemplater';
+import { SecureTemplater } from '../../../../lib/templating/SecureTemplater';
 import { createDefaultFilters } from '../../../../lib/templating/filters';
 import { examples } from './template.examples';
 
@@ -41,7 +40,7 @@ import { examples } from './template.examples';
  * @public
  */
 export function createFetchTemplateAction(options: {
-  reader: UrlReader;
+  reader: UrlReaderService;
   integrations: ScmIntegrations;
   additionalTemplateFilters?: Record<string, TemplateFilter>;
   additionalTemplateGlobals?: Record<string, TemplateGlobal>;

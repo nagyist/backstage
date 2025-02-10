@@ -18,7 +18,8 @@ import {
   ScaffolderOutputText,
   ScaffolderTaskOutput,
 } from '@backstage/plugin-scaffolder-react';
-import { Box, Paper } from '@material-ui/core';
+import Box from '@material-ui/core/Box';
+import Paper from '@material-ui/core/Paper';
 import React, { useEffect, useMemo, useState } from 'react';
 import { LinkOutputs } from './LinkOutputs';
 import { TextOutputs } from './TextOutputs';
@@ -55,22 +56,36 @@ export const DefaultTemplateOutputs = (props: {
     return null;
   }
 
+  const displayTextButtons = (output.text || []).length > 1;
+  const emptyOutput = (output.links || []).length === 0 && !displayTextButtons;
+
   return (
     <>
-      <Box paddingBottom={2}>
-        <Paper>
-          <Box padding={2} justifyContent="center" display="flex" gridGap={16}>
-            <TextOutputs
-              output={output}
-              index={textOutputIndex}
-              setIndex={setTextOutputIndex}
-            />
-            <LinkOutputs output={output} />
-          </Box>
-        </Paper>
-      </Box>
+      {!emptyOutput ? (
+        <Box paddingBottom={2} data-testid="output-box">
+          <Paper>
+            <Box
+              padding={2}
+              justifyContent="center"
+              display="flex"
+              gridGap={16}
+              flexWrap="wrap"
+            >
+              {displayTextButtons && (
+                <TextOutputs
+                  data-testid="text-outputs"
+                  output={output}
+                  index={textOutputIndex}
+                  setIndex={setTextOutputIndex}
+                />
+              )}
+              <LinkOutputs output={output} />
+            </Box>
+          </Paper>
+        </Box>
+      ) : null}
       {textOutput ? (
-        <Box paddingBottom={2}>
+        <Box paddingBottom={2} data-testid="text-output-box">
           <InfoCard
             title={textOutput.title ?? 'Text Output'}
             noPadding

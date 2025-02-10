@@ -15,16 +15,14 @@
  */
 
 import {
-  Config,
+  bufferFromFileOrString,
   Cluster,
   CoreV1Api,
   KubeConfig,
   Metrics,
-  bufferFromFileOrString,
   topPods,
 } from '@kubernetes/client-node';
 import lodash, { Dictionary } from 'lodash';
-import { Logger } from 'winston';
 import {
   FetchResponseWrapper,
   KubernetesFetcher,
@@ -32,9 +30,10 @@ import {
 } from '../types/types';
 import {
   ANNOTATION_KUBERNETES_AUTH_PROVIDER,
+  SERVICEACCOUNT_CA_PATH,
   FetchResponse,
-  KubernetesFetchError,
   KubernetesErrorTypes,
+  KubernetesFetchError,
   PodStatusFetchResponse,
 } from '@backstage/plugin-kubernetes-common';
 import fetch, { RequestInit, Response } from 'node-fetch';
@@ -45,9 +44,10 @@ import {
   ClusterDetails,
   KubernetesCredential,
 } from '@backstage/plugin-kubernetes-node';
+import { LoggerService } from '@backstage/backend-plugin-api';
 
 export interface KubernetesClientBasedFetcherOptions {
-  logger: Logger;
+  logger: LoggerService;
 }
 
 type FetchResult = FetchResponse | KubernetesFetchError;
@@ -84,7 +84,7 @@ const statusCodeToErrorType = (statusCode: number): KubernetesErrorTypes => {
 };
 
 export class KubernetesClientBasedFetcher implements KubernetesFetcher {
-  private readonly logger: Logger;
+  private readonly logger: LoggerService;
 
   constructor({ logger }: KubernetesClientBasedFetcherOptions) {
     this.logger = logger;
@@ -156,8 +156,7 @@ export class KubernetesClientBasedFetcher implements KubernetesFetcher {
       if (podMetrics.ok && podList.ok) {
         return topPods(
           {
-            listPodForAllNamespaces: () =>
-              podList.json().then(b => ({ body: b })),
+            listPodForAllNamespaces: () => podList.json(),
           } as unknown as CoreV1Api,
           {
             getPodMetrics: () => podMetrics.json(),
@@ -249,7 +248,7 @@ export class KubernetesClientBasedFetcher implements KubernetesFetcher {
     return (
       authProvider === 'serviceAccount' &&
       !clusterDetails.authMetadata.serviceAccountToken &&
-      fs.pathExistsSync(Config.SERVICEACCOUNT_CA_PATH)
+      fs.pathExistsSync(SERVICEACCOUNT_CA_PATH)
     );
   }
 

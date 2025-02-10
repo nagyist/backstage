@@ -14,11 +14,10 @@
  * limitations under the License.
  */
 
-import { ExtendedHttpServer } from '@backstage/backend-app-api';
 import { ClusterDetails } from '../types';
 import {
   mockServices,
-  setupRequestMockHandlers,
+  registerMswTestHooks,
   startTestBackend,
 } from '@backstage/backend-test-utils';
 import { createBackendModule } from '@backstage/backend-plugin-api';
@@ -32,18 +31,19 @@ import {
   KubernetesRequestAuth,
 } from '@backstage/plugin-kubernetes-common';
 import { PinnipedHelper, PinnipedParameters } from './PinnipedHelper';
-import { getVoidLogger } from '@backstage/backend-common';
 import { HEADER_KUBERNETES_CLUSTER } from '@backstage/plugin-kubernetes-backend';
 import { JsonObject } from '@backstage/types';
 import { rest } from 'msw';
 import { setupServer } from 'msw/node';
+import { loggerToWinstonLogger } from '@backstage/backend-common';
+import { ExtendedHttpServer } from '@backstage/backend-defaults/rootHttpRouter';
 
 describe('Pinniped - tokenCredentialRequest', () => {
   let app: ExtendedHttpServer;
-  const logger = getVoidLogger();
+  const logger = loggerToWinstonLogger(mockServices.logger.mock());
   let httpsRequest: jest.SpyInstance;
   const worker = setupServer();
-  setupRequestMockHandlers(worker);
+  registerMswTestHooks(worker);
 
   beforeAll(() => {
     httpsRequest = jest.spyOn(
@@ -90,7 +90,7 @@ describe('Pinniped - tokenCredentialRequest', () => {
             },
           },
         }),
-        import('@backstage/plugin-kubernetes-backend/alpha'),
+        import('@backstage/plugin-kubernetes-backend'),
         createBackendModule({
           pluginId: 'kubernetes',
           moduleId: 'testClusterSupplier',
@@ -261,7 +261,7 @@ describe('Pinniped - tokenCredentialRequest', () => {
               },
             },
           }),
-          import('@backstage/plugin-kubernetes-backend/alpha'),
+          import('@backstage/plugin-kubernetes-backend'),
           createBackendModule({
             pluginId: 'kubernetes',
             moduleId: 'testClusterSupplier',

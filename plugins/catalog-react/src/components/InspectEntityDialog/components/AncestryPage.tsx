@@ -27,15 +27,19 @@ import {
   ResponseErrorPanel,
 } from '@backstage/core-components';
 import { useApi, useApp, useRouteRef } from '@backstage/core-plugin-api';
-import { Box, DialogContentText, makeStyles } from '@material-ui/core';
+import Box from '@material-ui/core/Box';
+import DialogContentText from '@material-ui/core/DialogContentText';
+import { makeStyles } from '@material-ui/core/styles';
 import classNames from 'classnames';
 import React, { useLayoutEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import useAsync from 'react-use/lib/useAsync';
+import useAsync from 'react-use/esm/useAsync';
 import { catalogApiRef } from '../../../api';
 import { humanizeEntityRef } from '../../EntityRefLink';
 import { entityRouteRef } from '../../../routes';
 import { EntityKindIcon } from './EntityKindIcon';
+import { catalogReactTranslationRef } from '../../../translation';
+import { useTranslationRef } from '@backstage/core-plugin-api/alpha';
 
 const useStyles = makeStyles(theme => ({
   node: {
@@ -196,6 +200,7 @@ function CustomNode({ node }: DependencyGraphTypes.RenderNodeProps<NodeType>) {
 
 export function AncestryPage(props: { entity: Entity }) {
   const { loading, error, nodes, edges } = useAncestry(props.entity);
+  const { t } = useTranslationRef(catalogReactTranslationRef);
   if (loading) {
     return <Progress />;
   } else if (error) {
@@ -204,7 +209,9 @@ export function AncestryPage(props: { entity: Entity }) {
 
   return (
     <>
-      <DialogContentText variant="h2">Ancestry</DialogContentText>
+      <DialogContentText variant="h2">
+        {t('inspectEntityDialog.ancestryPage.title')}
+      </DialogContentText>
       <DialogContentText gutterBottom>
         This is the ancestry of entities above the current one - as in, the
         chain(s) of entities down to the current one, where{' '}

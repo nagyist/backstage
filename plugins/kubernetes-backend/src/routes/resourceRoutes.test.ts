@@ -15,16 +15,51 @@
  */
 
 import request from 'supertest';
-import { mockServices, startTestBackend } from '@backstage/backend-test-utils';
-import { ExtendedHttpServer } from '@backstage/backend-app-api';
+import {
+  mockCredentials,
+  mockServices,
+  type ServiceMock,
+  startTestBackend,
+} from '@backstage/backend-test-utils';
 import { kubernetesObjectsProviderExtensionPoint } from '@backstage/plugin-kubernetes-node';
-import { createBackendModule } from '@backstage/backend-plugin-api';
+import {
+  createBackendModule,
+  type PermissionsService,
+} from '@backstage/backend-plugin-api';
 import { Entity } from '@backstage/catalog-model';
+import { ExtendedHttpServer } from '@backstage/backend-defaults/rootHttpRouter';
+import { AuthorizeResult } from '@backstage/plugin-permission-common';
 
 describe('resourcesRoutes', () => {
   let app: ExtendedHttpServer;
+  const permissionsMock: ServiceMock<PermissionsService> =
+    mockServices.permissions.mock({
+      authorize: jest.fn(),
+      authorizeConditional: jest.fn(),
+    });
 
-  beforeAll(async () => {
+  const startPermissionDeniedTestServer = async () => {
+    permissionsMock.authorize.mockResolvedValue([
+      { result: AuthorizeResult.DENY },
+    ]);
+    const { server } = await startTestBackend({
+      features: [
+        mockServices.rootConfig.factory({
+          data: {
+            kubernetes: {
+              serviceLocatorMethod: { type: 'multiTenant' },
+              clusterLocatorMethods: [],
+            },
+          },
+        }),
+        permissionsMock.factory,
+        import('@backstage/plugin-kubernetes-backend'),
+      ],
+    });
+    return server;
+  };
+
+  beforeEach(async () => {
     const objectsProviderMock = {
       getKubernetesObjectsByEntity: jest.fn().mockImplementation(args => {
         if (args.entity.metadata.name === 'inject500') {
@@ -104,7 +139,9 @@ describe('resourcesRoutes', () => {
             },
           },
         }),
-        import('@backstage/plugin-kubernetes-backend/alpha'),
+        import('@backstage/plugin-kubernetes-backend'),
+        import('@backstage/plugin-permission-backend'),
+        import('@backstage/plugin-permission-backend-module-allow-all-policy'),
         createBackendModule({
           pluginId: 'kubernetes',
           moduleId: 'test-objects-provider',
@@ -123,6 +160,10 @@ describe('resourcesRoutes', () => {
     app = server;
   });
 
+  afterEach(() => {
+    app.stop();
+  });
+
   describe('POST /resources/workloads/query', () => {
     // eslint-disable-next-line jest/expect-expect
     it('200 happy path', async () => {
@@ -135,7 +176,6 @@ describe('resourcesRoutes', () => {
           },
         })
         .set('Content-Type', 'application/json')
-        .set('Authorization', 'Bearer Zm9vYmFy')
         .expect(200, {
           items: [
             {
@@ -162,12 +202,11 @@ describe('resourcesRoutes', () => {
           },
         })
         .set('Content-Type', 'application/json')
-        .set('Authorization', 'Bearer Zm9vYmFy')
         .expect(400, {
           error: { name: 'InputError', message: 'entity is a required field' },
           request: {
             method: 'POST',
-            url: '/api/kubernetes/resources/workloads/query',
+            url: '/resources/workloads/query',
           },
           response: { statusCode: 400 },
         });
@@ -183,7 +222,6 @@ describe('resourcesRoutes', () => {
           },
         })
         .set('Content-Type', 'application/json')
-        .set('Authorization', 'Bearer Zm9vYmFy')
         .expect(400, {
           error: {
             name: 'InputError',
@@ -192,7 +230,7 @@ describe('resourcesRoutes', () => {
           },
           request: {
             method: 'POST',
-            url: '/api/kubernetes/resources/workloads/query',
+            url: '/resources/workloads/query',
           },
           response: { statusCode: 400 },
         });
@@ -208,7 +246,6 @@ describe('resourcesRoutes', () => {
           },
         })
         .set('Content-Type', 'application/json')
-        .set('Authorization', 'Bearer Zm9vYmFy')
         .expect(400, {
           error: {
             name: 'InputError',
@@ -216,7 +253,7 @@ describe('resourcesRoutes', () => {
           },
           request: {
             method: 'POST',
-            url: '/api/kubernetes/resources/workloads/query',
+            url: '/resources/workloads/query',
           },
           response: { statusCode: 400 },
         });
@@ -225,6 +262,7 @@ describe('resourcesRoutes', () => {
     it('401 when no Auth header', async () => {
       await request(app)
         .post('/api/kubernetes/resources/workloads/query')
+        .set('authorization', mockCredentials.none.header())
         .send({
           entityRef: 'component:someComponent',
           auth: {
@@ -233,10 +271,13 @@ describe('resourcesRoutes', () => {
         })
         .set('Content-Type', 'application/json')
         .expect(401, {
-          error: { name: 'AuthenticationError', message: 'No Backstage token' },
+          error: {
+            name: 'AuthenticationError',
+            message: 'Missing credentials',
+          },
           request: {
             method: 'POST',
-            url: '/api/kubernetes/resources/workloads/query',
+            url: '/resources/workloads/query',
           },
           response: { statusCode: 401 },
         });
@@ -252,15 +293,25 @@ describe('resourcesRoutes', () => {
           },
         })
         .set('Content-Type', 'application/json')
-        .set('Authorization', 'ffffff')
+        .set('Authorization', mockCredentials.user.invalidHeader())
         .expect(401, {
-          error: { name: 'AuthenticationError', message: 'No Backstage token' },
+          error: {
+            name: 'AuthenticationError',
+            message: 'User token is invalid',
+          },
           request: {
             method: 'POST',
-            url: '/api/kubernetes/resources/workloads/query',
+            url: '/resources/workloads/query',
           },
           response: { statusCode: 401 },
         });
+    });
+    it('403 when permission blocks endpoint', async () => {
+      app = await startPermissionDeniedTestServer();
+      const response = await request(app).post(
+        '/api/kubernetes/resources/workloads/query',
+      );
+      expect(response.status).toEqual(403);
     });
     // eslint-disable-next-line jest/expect-expect
     it('500 handle gracefully', async () => {
@@ -273,7 +324,6 @@ describe('resourcesRoutes', () => {
           },
         })
         .set('Content-Type', 'application/json')
-        .set('Authorization', 'Bearer Zm9vYmFy')
         .expect(500, {
           error: {
             name: 'Error',
@@ -281,7 +331,7 @@ describe('resourcesRoutes', () => {
           },
           request: {
             method: 'POST',
-            url: '/api/kubernetes/resources/workloads/query',
+            url: '/resources/workloads/query',
           },
           response: { statusCode: 500 },
         });
@@ -306,7 +356,6 @@ describe('resourcesRoutes', () => {
           ],
         })
         .set('Content-Type', 'application/json')
-        .set('Authorization', 'Bearer Zm9vYmFy')
         .expect(200, {
           items: [
             {
@@ -334,7 +383,6 @@ describe('resourcesRoutes', () => {
           },
         })
         .set('Content-Type', 'application/json')
-        .set('Authorization', 'Bearer Zm9vYmFy')
         .expect(400, {
           error: {
             name: 'InputError',
@@ -342,7 +390,7 @@ describe('resourcesRoutes', () => {
           },
           request: {
             method: 'POST',
-            url: '/api/kubernetes/resources/custom/query',
+            url: '/resources/custom/query',
           },
           response: { statusCode: 400 },
         });
@@ -359,7 +407,6 @@ describe('resourcesRoutes', () => {
           customResources: 'somestring',
         })
         .set('Content-Type', 'application/json')
-        .set('Authorization', 'Bearer Zm9vYmFy')
         .expect(400, {
           error: {
             name: 'InputError',
@@ -367,7 +414,7 @@ describe('resourcesRoutes', () => {
           },
           request: {
             method: 'POST',
-            url: '/api/kubernetes/resources/custom/query',
+            url: '/resources/custom/query',
           },
           response: { statusCode: 400 },
         });
@@ -384,7 +431,6 @@ describe('resourcesRoutes', () => {
           customResources: [],
         })
         .set('Content-Type', 'application/json')
-        .set('Authorization', 'Bearer Zm9vYmFy')
         .expect(400, {
           error: {
             name: 'InputError',
@@ -392,7 +438,7 @@ describe('resourcesRoutes', () => {
           },
           request: {
             method: 'POST',
-            url: '/api/kubernetes/resources/custom/query',
+            url: '/resources/custom/query',
           },
           response: { statusCode: 400 },
         });
@@ -414,12 +460,11 @@ describe('resourcesRoutes', () => {
           ],
         })
         .set('Content-Type', 'application/json')
-        .set('Authorization', 'Bearer Zm9vYmFy')
         .expect(400, {
           error: { name: 'InputError', message: 'entity is a required field' },
           request: {
             method: 'POST',
-            url: '/api/kubernetes/resources/custom/query',
+            url: '/resources/custom/query',
           },
           response: { statusCode: 400 },
         });
@@ -442,7 +487,6 @@ describe('resourcesRoutes', () => {
           ],
         })
         .set('Content-Type', 'application/json')
-        .set('Authorization', 'Bearer Zm9vYmFy')
         .expect(400, {
           error: {
             name: 'InputError',
@@ -451,7 +495,7 @@ describe('resourcesRoutes', () => {
           },
           request: {
             method: 'POST',
-            url: '/api/kubernetes/resources/custom/query',
+            url: '/resources/custom/query',
           },
           response: { statusCode: 400 },
         });
@@ -474,7 +518,6 @@ describe('resourcesRoutes', () => {
           ],
         })
         .set('Content-Type', 'application/json')
-        .set('Authorization', 'Bearer Zm9vYmFy')
         .expect(400, {
           error: {
             name: 'InputError',
@@ -482,7 +525,7 @@ describe('resourcesRoutes', () => {
           },
           request: {
             method: 'POST',
-            url: '/api/kubernetes/resources/custom/query',
+            url: '/resources/custom/query',
           },
           response: { statusCode: 400 },
         });
@@ -491,6 +534,7 @@ describe('resourcesRoutes', () => {
     it('401 when no Auth header', async () => {
       await request(app)
         .post('/api/kubernetes/resources/custom/query')
+        .set('authorization', mockCredentials.none.header())
         .send({
           entityRef: 'component:someComponent',
           auth: {
@@ -506,10 +550,13 @@ describe('resourcesRoutes', () => {
         })
         .set('Content-Type', 'application/json')
         .expect(401, {
-          error: { name: 'AuthenticationError', message: 'No Backstage token' },
+          error: {
+            name: 'AuthenticationError',
+            message: 'Missing credentials',
+          },
           request: {
             method: 'POST',
-            url: '/api/kubernetes/resources/custom/query',
+            url: '/resources/custom/query',
           },
           response: { statusCode: 401 },
         });
@@ -532,15 +579,25 @@ describe('resourcesRoutes', () => {
           ],
         })
         .set('Content-Type', 'application/json')
-        .set('Authorization', 'ffffff')
+        .set('Authorization', mockCredentials.user.invalidHeader())
         .expect(401, {
-          error: { name: 'AuthenticationError', message: 'No Backstage token' },
+          error: {
+            name: 'AuthenticationError',
+            message: 'User token is invalid',
+          },
           request: {
             method: 'POST',
-            url: '/api/kubernetes/resources/custom/query',
+            url: '/resources/custom/query',
           },
           response: { statusCode: 401 },
         });
+    });
+    it('403 when permission blocks endpoint', async () => {
+      app = await startPermissionDeniedTestServer();
+      const response = await request(app).post(
+        '/api/kubernetes/resources/custom/query',
+      );
+      expect(response.status).toEqual(403);
     });
     // eslint-disable-next-line jest/expect-expect
     it('500 handle gracefully', async () => {
@@ -560,7 +617,6 @@ describe('resourcesRoutes', () => {
           ],
         })
         .set('Content-Type', 'application/json')
-        .set('Authorization', 'Bearer Zm9vYmFy')
         .expect(500, {
           error: {
             name: 'Error',
@@ -568,7 +624,7 @@ describe('resourcesRoutes', () => {
           },
           request: {
             method: 'POST',
-            url: '/api/kubernetes/resources/custom/query',
+            url: '/resources/custom/query',
           },
           response: { statusCode: 500 },
         });

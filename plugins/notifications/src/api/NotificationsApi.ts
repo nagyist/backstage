@@ -16,8 +16,9 @@
 import { createApiRef } from '@backstage/core-plugin-api';
 import {
   Notification,
+  NotificationSettings,
+  NotificationSeverity,
   NotificationStatus,
-  NotificationType,
 } from '@backstage/plugin-notifications-common';
 
 /** @public */
@@ -26,28 +27,63 @@ export const notificationsApiRef = createApiRef<NotificationsApi>({
 });
 
 /** @public */
-export type GetNotificationsOptions = {
-  type?: NotificationType;
+export type GetNotificationsCommonOptions = {
+  search?: string;
+  read?: boolean;
+  saved?: boolean;
+  createdAfter?: Date;
+  minimumSeverity?: NotificationSeverity;
+};
+
+/** @public */
+export type GetNotificationsOptions = GetNotificationsCommonOptions & {
   offset?: number;
   limit?: number;
-  search?: string;
+  sort?: 'created' | 'topic' | 'origin';
+  sortOrder?: 'asc' | 'desc';
+  topic?: string;
 };
+
+/** @public */
+export type GetTopicsOptions = GetNotificationsCommonOptions;
 
 /** @public */
 export type UpdateNotificationsOptions = {
   ids: string[];
-  done?: boolean;
   read?: boolean;
   saved?: boolean;
 };
 
 /** @public */
+export type GetNotificationsResponse = {
+  notifications: Notification[];
+  totalCount: number;
+};
+
+/** @public */
+export type GetTopicsResponse = {
+  topics: string[];
+};
+
+/** @public */
 export interface NotificationsApi {
-  getNotifications(options?: GetNotificationsOptions): Promise<Notification[]>;
+  getNotifications(
+    options?: GetNotificationsOptions,
+  ): Promise<GetNotificationsResponse>;
+
+  getNotification(id: string): Promise<Notification>;
 
   getStatus(): Promise<NotificationStatus>;
 
   updateNotifications(
     options: UpdateNotificationsOptions,
   ): Promise<Notification[]>;
+
+  getNotificationSettings(): Promise<NotificationSettings>;
+
+  updateNotificationSettings(
+    settings: NotificationSettings,
+  ): Promise<NotificationSettings>;
+
+  getTopics(options?: GetTopicsOptions): Promise<GetTopicsResponse>;
 }

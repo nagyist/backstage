@@ -20,13 +20,12 @@ import {
   DefaultGithubCredentialsProvider,
   GithubCredentialsProvider,
 } from '@backstage/integration';
+import { createMockActionContext } from '@backstage/plugin-scaffolder-node-test-utils';
 import { ConfigReader } from '@backstage/config';
-import { getVoidLogger } from '@backstage/backend-common';
 import { TemplateAction } from '@backstage/plugin-scaffolder-node';
-import { PassThrough } from 'stream';
-import { getOctokitOptions } from './helpers';
+import { getOctokitOptions } from '../util';
 
-jest.mock('./helpers', () => {
+jest.mock('../util', () => {
   return {
     getOctokitOptions: jest.fn(),
   };
@@ -62,18 +61,13 @@ describe('github:issues:label', () => {
   let githubCredentialsProvider: GithubCredentialsProvider;
   let action: TemplateAction<any>;
 
-  const mockContext = {
+  const mockContext = createMockActionContext({
     input: {
       repoUrl: 'github.com?repo=repo&owner=owner',
       number: '1',
       labels: ['label1', 'label2'],
     },
-    workspacePath: 'lol',
-    logger: getVoidLogger(),
-    logStream: new PassThrough(),
-    output: jest.fn(),
-    createTemporaryDirectory: jest.fn(),
-  };
+  });
 
   beforeEach(() => {
     jest.resetAllMocks();

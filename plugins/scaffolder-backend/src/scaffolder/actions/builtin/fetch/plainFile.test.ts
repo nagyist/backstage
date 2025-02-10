@@ -19,14 +19,13 @@ jest.mock('@backstage/plugin-scaffolder-node', () => {
   return { ...actual, fetchFile: jest.fn() };
 });
 
-import os from 'os';
 import { resolve as resolvePath } from 'path';
-import { getVoidLogger, UrlReader } from '@backstage/backend-common';
+import { createMockActionContext } from '@backstage/plugin-scaffolder-node-test-utils';
 import { ConfigReader } from '@backstage/config';
 import { ScmIntegrations } from '@backstage/integration';
 import { fetchFile } from '@backstage/plugin-scaffolder-node';
 import { createFetchPlainFileAction } from './plainFile';
-import { PassThrough } from 'stream';
+import { UrlReaderService } from '@backstage/backend-plugin-api';
 
 describe('fetch:plain:file', () => {
   const integrations = ScmIntegrations.fromConfig(
@@ -36,7 +35,7 @@ describe('fetch:plain:file', () => {
       },
     }),
   );
-  const reader: UrlReader = {
+  const reader: UrlReaderService = {
     readUrl: jest.fn(),
     readTree: jest.fn(),
     search: jest.fn(),
@@ -47,13 +46,7 @@ describe('fetch:plain:file', () => {
   });
 
   const action = createFetchPlainFileAction({ integrations, reader });
-  const mockContext = {
-    workspacePath: os.tmpdir(),
-    logger: getVoidLogger(),
-    logStream: new PassThrough(),
-    output: jest.fn(),
-    createTemporaryDirectory: jest.fn(),
-  };
+  const mockContext = createMockActionContext();
 
   it('should disallow a target path outside working directory', async () => {
     await expect(

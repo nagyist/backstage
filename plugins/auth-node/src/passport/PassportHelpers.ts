@@ -19,6 +19,7 @@ import { decodeJwt } from 'jose';
 import { Strategy } from 'passport';
 import { PassportProfile } from './types';
 import { ProfileInfo } from '../types';
+import { ForwardedError } from '@backstage/errors';
 
 // Re-declared here to avoid direct dependency on passport-oauth2
 /** @internal */
@@ -40,6 +41,9 @@ export class PassportHelpers {
     if (profile.emails && profile.emails.length > 0) {
       const [firstEmail] = profile.emails;
       email = firstEmail.value;
+    } else if (profile.email) {
+      // This is the case for Atlassian
+      email = profile.email;
     }
 
     let picture: string | undefined = undefined;
@@ -48,6 +52,9 @@ export class PassportHelpers {
     } else if (profile.photos && profile.photos.length > 0) {
       const [firstPhoto] = profile.photos;
       picture = firstPhoto.value;
+    } else if (profile.photo) {
+      // This is the case for Atlassian
+      picture = profile.photo;
     }
 
     let displayName: string | undefined =
@@ -70,7 +77,10 @@ export class PassportHelpers {
           displayName = decoded.name;
         }
       } catch (e) {
-        throw new Error(`Failed to parse id token and get profile info, ${e}`);
+        throw new ForwardedError(
+          `Failed to parse id token and get profile info`,
+          e,
+        );
       }
     }
 
@@ -185,9 +195,7 @@ export class PassportHelpers {
           params: any,
         ) => {
           if (err) {
-            reject(
-              new Error(`Failed to refresh access token ${err.toString()}`),
-            );
+            reject(new ForwardedError(`Failed to refresh access token`, err));
           }
           if (!accessToken) {
             reject(

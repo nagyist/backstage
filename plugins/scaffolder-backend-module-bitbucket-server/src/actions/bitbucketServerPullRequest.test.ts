@@ -29,11 +29,10 @@ jest.mock('@backstage/plugin-scaffolder-node', () => {
 import { createPublishBitbucketServerPullRequestAction } from './bitbucketServerPullRequest';
 import { rest } from 'msw';
 import { setupServer } from 'msw/node';
-import { setupRequestMockHandlers } from '@backstage/backend-test-utils';
+import { registerMswTestHooks } from '@backstage/backend-test-utils';
 import { ScmIntegrations } from '@backstage/integration';
 import { ConfigReader } from '@backstage/config';
-import { getVoidLogger } from '@backstage/backend-common';
-import { PassThrough } from 'stream';
+import { createMockActionContext } from '@backstage/plugin-scaffolder-node-test-utils';
 
 describe('publish:bitbucketServer:pull-request', () => {
   const config = new ConfigReader({
@@ -62,7 +61,7 @@ describe('publish:bitbucketServer:pull-request', () => {
     integrations,
     config,
   });
-  const mockContext = {
+  const mockContext = createMockActionContext({
     input: {
       repoUrl: 'hosted.bitbucket.com?project=project&repo=repo',
       title: 'Add Scaffolder actions for Bitbucket Server',
@@ -71,12 +70,7 @@ describe('publish:bitbucketServer:pull-request', () => {
       targetBranch: 'master',
       sourceBranch: 'develop',
     },
-    workspacePath: 'wsp',
-    logger: getVoidLogger(),
-    logStream: new PassThrough(),
-    output: jest.fn(),
-    createTemporaryDirectory: jest.fn(),
-  };
+  });
   const responseOfBranches = {
     size: 3,
     limit: 25,
@@ -108,6 +102,14 @@ describe('publish:bitbucketServer:pull-request', () => {
       },
     ],
     start: 0,
+  };
+  const responseOfDefaultBranch = {
+    id: 'refs/heads/main',
+    displayId: 'main',
+    type: 'BRANCH',
+    latestCommit: '1245346tsdfgdf',
+    latestChangeset: 'wsdfgdh234',
+    isDefault: true,
   };
   const responseOfPullRequests = {
     id: 19,
@@ -196,6 +198,16 @@ describe('publish:bitbucketServer:pull-request', () => {
         );
       },
     ),
+    rest.get(
+      'https://hosted.bitbucket.com/rest/api/1.0/projects/project/repos/repo/default-branch',
+      (_, res, ctx) => {
+        return res(
+          ctx.status(200),
+          ctx.set('Content-Type', 'application/json'),
+          ctx.json(responseOfDefaultBranch),
+        );
+      },
+    ),
     rest.post(
       'https://hosted.bitbucket.com/rest/api/1.0/projects/project/repos/repo/pull-requests',
       (_, res, ctx) => {
@@ -209,7 +221,7 @@ describe('publish:bitbucketServer:pull-request', () => {
   ];
 
   const server = setupServer();
-  setupRequestMockHandlers(server);
+  registerMswTestHooks(server);
 
   beforeEach(() => {
     jest.resetAllMocks();

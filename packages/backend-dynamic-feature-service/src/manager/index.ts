@@ -32,9 +32,10 @@ export type {
 
 export {
   DynamicPluginManager,
-  dynamicPluginsFeatureDiscoveryServiceFactory,
   dynamicPluginsServiceFactory,
+  dynamicPluginsServiceFactoryWithOptions,
   dynamicPluginsServiceRef,
+  dynamicPluginsFeatureDiscoveryLoader,
 } from './plugin-manager';
 
 export type {

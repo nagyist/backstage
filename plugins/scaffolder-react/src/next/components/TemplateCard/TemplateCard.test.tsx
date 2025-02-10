@@ -13,13 +13,14 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 import { DefaultStarredEntitiesApi } from '@backstage/plugin-catalog';
 import {
   entityRouteRef,
   starredEntitiesApiRef,
 } from '@backstage/plugin-catalog-react';
 import {
-  MockStorageApi,
+  mockApis,
   renderInTestApp,
   TestApiProvider,
 } from '@backstage/test-utils';
@@ -28,6 +29,9 @@ import React from 'react';
 import { TemplateEntityV1beta3 } from '@backstage/plugin-scaffolder-common';
 import { RELATION_OWNED_BY } from '@backstage/catalog-model';
 import { fireEvent } from '@testing-library/react';
+import { permissionApiRef } from '@backstage/plugin-permission-react';
+import { AuthorizeResult } from '@backstage/plugin-permission-common';
+import { SWRConfig } from 'swr';
 
 describe('TemplateCard', () => {
   it('should render the card title', async () => {
@@ -47,9 +51,10 @@ describe('TemplateCard', () => {
           [
             starredEntitiesApiRef,
             new DefaultStarredEntitiesApi({
-              storageApi: MockStorageApi.create(),
+              storageApi: mockApis.storage(),
             }),
           ],
+          [permissionApiRef, mockApis.permission()],
         ]}
       >
         <TemplateCard template={mockTemplate} />
@@ -76,9 +81,10 @@ describe('TemplateCard', () => {
           [
             starredEntitiesApiRef,
             new DefaultStarredEntitiesApi({
-              storageApi: MockStorageApi.create(),
+              storageApi: mockApis.storage(),
             }),
           ],
+          [permissionApiRef, mockApis.permission()],
         ]}
       >
         <TemplateCard template={mockTemplate} />
@@ -107,9 +113,10 @@ describe('TemplateCard', () => {
           [
             starredEntitiesApiRef,
             new DefaultStarredEntitiesApi({
-              storageApi: MockStorageApi.create(),
+              storageApi: mockApis.storage(),
             }),
           ],
+          [permissionApiRef, mockApis.permission()],
         ]}
       >
         <TemplateCard template={mockTemplate} />
@@ -136,9 +143,10 @@ describe('TemplateCard', () => {
           [
             starredEntitiesApiRef,
             new DefaultStarredEntitiesApi({
-              storageApi: MockStorageApi.create(),
+              storageApi: mockApis.storage(),
             }),
           ],
+          [permissionApiRef, mockApis.permission()],
         ]}
       >
         <TemplateCard template={mockTemplate} />
@@ -171,9 +179,10 @@ describe('TemplateCard', () => {
           [
             starredEntitiesApiRef,
             new DefaultStarredEntitiesApi({
-              storageApi: MockStorageApi.create(),
+              storageApi: mockApis.storage(),
             }),
           ],
+          [permissionApiRef, mockApis.permission()],
         ]}
       >
         <TemplateCard template={mockTemplate} />
@@ -210,9 +219,10 @@ describe('TemplateCard', () => {
           [
             starredEntitiesApiRef,
             new DefaultStarredEntitiesApi({
-              storageApi: MockStorageApi.create(),
+              storageApi: mockApis.storage(),
             }),
           ],
+          [permissionApiRef, mockApis.permission()],
         ]}
       >
         <TemplateCard template={mockTemplate} />
@@ -254,9 +264,10 @@ describe('TemplateCard', () => {
           [
             starredEntitiesApiRef,
             new DefaultStarredEntitiesApi({
-              storageApi: MockStorageApi.create(),
+              storageApi: mockApis.storage(),
             }),
           ],
+          [permissionApiRef, mockApis.permission()],
         ]}
       >
         <TemplateCard template={mockTemplate} additionalLinks={[]} />
@@ -302,9 +313,10 @@ describe('TemplateCard', () => {
           [
             starredEntitiesApiRef,
             new DefaultStarredEntitiesApi({
-              storageApi: MockStorageApi.create(),
+              storageApi: mockApis.storage(),
             }),
           ],
+          [permissionApiRef, mockApis.permission()],
         ]}
       >
         <TemplateCard template={mockTemplate} additionalLinks={[]} />
@@ -344,9 +356,10 @@ describe('TemplateCard', () => {
           [
             starredEntitiesApiRef,
             new DefaultStarredEntitiesApi({
-              storageApi: MockStorageApi.create(),
+              storageApi: mockApis.storage(),
             }),
           ],
+          [permissionApiRef, mockApis.permission()],
         ]}
       >
         <TemplateCard template={mockTemplate} />
@@ -383,9 +396,10 @@ describe('TemplateCard', () => {
           [
             starredEntitiesApiRef,
             new DefaultStarredEntitiesApi({
-              storageApi: MockStorageApi.create(),
+              storageApi: mockApis.storage(),
             }),
           ],
+          [permissionApiRef, mockApis.permission()],
         ]}
       >
         <TemplateCard template={mockTemplate} onSelected={mockOnSelected} />
@@ -402,5 +416,45 @@ describe('TemplateCard', () => {
     fireEvent.click(getByRole('button', { name: 'Choose' }));
 
     expect(mockOnSelected).toHaveBeenCalledWith(mockTemplate);
+  });
+  it('should not render the choose button when user has insufficient permissions', async () => {
+    const mockTemplate: TemplateEntityV1beta3 = {
+      apiVersion: 'scaffolder.backstage.io/v1beta3',
+      kind: 'Template',
+      metadata: { name: 'bob', tags: ['cpp', 'react'] },
+      spec: {
+        steps: [],
+        type: 'service',
+      },
+    };
+    const mockOnSelected = jest.fn();
+    // SWR used by the usePermission hook needs cache to be reset for each test
+    const { queryByText } = await renderInTestApp(
+      <SWRConfig value={{ provider: () => new Map() }}>
+        <TestApiProvider
+          apis={[
+            [
+              starredEntitiesApiRef,
+              new DefaultStarredEntitiesApi({
+                storageApi: mockApis.storage(),
+              }),
+            ],
+            [
+              permissionApiRef,
+              mockApis.permission({ authorize: AuthorizeResult.DENY }),
+            ],
+          ]}
+        >
+          <TemplateCard template={mockTemplate} onSelected={mockOnSelected} />
+        </TestApiProvider>
+      </SWRConfig>,
+      {
+        mountedRoutes: {
+          '/catalog/:kind/:namespace/:name': entityRouteRef,
+        },
+      },
+    );
+
+    expect(queryByText('Choose')).toBeNull();
   });
 });

@@ -26,6 +26,7 @@ export interface Config {
       name?: string;
       email?: string;
     };
+
     /**
      * The commit message used when new components are created.
      */
@@ -41,6 +42,11 @@ export interface Config {
     concurrentTasksLimit?: number;
 
     /**
+     * Tries to wait for tasks to finish during SIGTERM before shutting down the TaskWorker.
+     */
+    EXPERIMENTAL_gracefulShutdown?: boolean;
+
+    /**
      * Sets the tasks recoverability on system start up.
      *
      * If not specified, the default value is false.
@@ -48,20 +54,31 @@ export interface Config {
     EXPERIMENTAL_recoverTasks?: boolean;
 
     /**
+     * Sets the serialization of the workspace to have an ability to rerun the failed task.
+     */
+    EXPERIMENTAL_workspaceSerialization?: boolean;
+
+    /**
+     * Sets the provider for workspace serialization.
+     *
+     * By default, it is your database.
+     */
+    EXPERIMENTAL_workspaceSerializationProvider?: string;
+
+    /**
      * Every task which is in progress state and having a last heartbeat longer than a specified timeout is going to
      * be attempted to recover.
      *
      * If not specified, the default value is 5 seconds.
-     *
      */
-    EXPERIMENTAL_recoverTasksTimeout?: HumanDuration;
+    EXPERIMENTAL_recoverTasksTimeout?: HumanDuration | string;
 
     /**
      * Makes sure to auto-expire and clean up things that time out or for other reasons should not be left lingering.
      *
      * By default, the frequency is every 5 minutes.
      */
-    taskTimeoutJanitorFrequency?: HumanDuration;
+    taskTimeoutJanitorFrequency?: HumanDuration | string;
 
     /**
      * Sets the task's heartbeat timeout, when to consider a task to be staled.
@@ -70,6 +87,6 @@ export interface Config {
      *
      * Default value is 24 hours.
      */
-    taskTimeout?: HumanDuration;
+    taskTimeout?: HumanDuration | string;
   };
 }

@@ -13,10 +13,12 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 import {
   coreServices,
   createBackendPlugin,
 } from '@backstage/backend-plugin-api';
+import { eventsServiceRef } from '@backstage/plugin-events-node';
 import { createRouter } from './service/router';
 
 /**
@@ -31,19 +33,38 @@ export const signalsPlugin = createBackendPlugin({
       deps: {
         httpRouter: coreServices.httpRouter,
         logger: coreServices.logger,
-        identity: coreServices.identity,
+        config: coreServices.rootConfig,
+        lifecycle: coreServices.rootLifecycle,
         discovery: coreServices.discovery,
-        // TODO: EventBroker. It is optional for now but it's actually required so waiting for the new backend system
-        //       for the events-backend for this to work.
+        userInfo: coreServices.userInfo,
+        auth: coreServices.auth,
+        events: eventsServiceRef,
       },
-      async init({ httpRouter, logger, identity, discovery }) {
+      async init({
+        httpRouter,
+        logger,
+        config,
+        lifecycle,
+        discovery,
+        userInfo,
+        auth,
+        events,
+      }) {
         httpRouter.use(
           await createRouter({
             logger,
-            identity,
+            config,
+            lifecycle,
             discovery,
+            userInfo,
+            auth,
+            events,
           }),
         );
+        httpRouter.addAuthPolicy({
+          path: '/',
+          allow: 'unauthenticated',
+        });
       },
     });
   },

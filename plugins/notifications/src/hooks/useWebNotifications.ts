@@ -13,42 +13,64 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
+import { useApi, useRouteRef } from '@backstage/core-plugin-api';
+import { notificationsApiRef } from '../api';
+import { rootRouteRef } from '../routes';
 
-/** @public */
-export function useWebNotifications() {
+/** @internal */
+export function useWebNotifications(enabled: boolean) {
   const [webNotificationPermission, setWebNotificationPermission] =
     useState('default');
-  const [webNotifications, setWebNotifications] = useState<Notification[]>([]);
+  const notificationsRoute = useRouteRef(rootRouteRef)();
+  const notificationsApi = useApi(notificationsApiRef);
 
-  useEffect(() => {
-    if ('Notification' in window && webNotificationPermission === 'default') {
+  const requestUserPermission = useCallback(() => {
+    if (
+      enabled &&
+      'Notification' in window &&
+      webNotificationPermission === 'default'
+    ) {
       window.Notification.requestPermission().then(permission => {
         setWebNotificationPermission(permission);
       });
     }
-  }, [webNotificationPermission]);
-
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') {
-      webNotifications.forEach(n => n.close());
-      setWebNotifications([]);
-    }
-  });
+  }, [enabled, webNotificationPermission]);
 
   const sendWebNotification = useCallback(
-    (options: { title: string; description: string }) => {
+    (options: {
+      id: string;
+      title: string;
+      description: string;
+      link?: string;
+    }) => {
       if (webNotificationPermission !== 'granted') {
         return null;
       }
 
       const notification = new Notification(options.title, {
         body: options.description,
+        tag: options.id, // Prevent duplicates from multiple tabs
       });
+
+      notification.onclick = event => {
+        event.preventDefault();
+        if (options.link) {
+          window.open(options.link, '_blank');
+          notificationsApi.updateNotifications({
+            ids: [options.id],
+            read: true,
+          });
+        } else {
+          window.open(notificationsRoute);
+        }
+        notification.close();
+      };
+
       return notification;
     },
-    [webNotificationPermission],
+    [webNotificationPermission, notificationsApi, notificationsRoute],
   );
 
-  return { sendWebNotification };
+  return { sendWebNotification, requestUserPermission };
 }

@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+import { HumanDuration } from '@backstage/types';
+
 export interface Config {
   auth?: {
     providers?: {
@@ -29,7 +31,18 @@ export interface Config {
           authServerId?: string;
           idp?: string;
           callbackUrl?: string;
-          additionalScopes?: string;
+          additionalScopes?: string | string[];
+          signIn?: {
+            resolvers: Array<
+              | { resolver: 'emailMatchingUserEntityAnnotation' }
+              | {
+                  resolver: 'emailLocalPartMatchingUserEntityName';
+                  allowedDomains?: string[];
+                }
+              | { resolver: 'emailMatchingUserEntityProfileEmail' }
+            >;
+          };
+          sessionDuration?: HumanDuration | string;
         };
       };
     };

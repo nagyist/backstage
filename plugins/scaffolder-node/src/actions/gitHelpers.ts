@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-import { Git } from '@backstage/backend-common';
 import { Logger } from 'winston';
+import { Git } from '../scm';
 
 /**
  * @public
@@ -65,15 +65,11 @@ export async function initRepoAndPush(input: {
     author: authorInfo,
     committer: authorInfo,
   });
-  await git.addRemote({
-    dir,
-    url: remoteUrl,
-    remote: 'origin',
-  });
 
   await git.push({
     dir,
     remote: 'origin',
+    url: remoteUrl,
   });
 
   return { commitHash };
@@ -178,7 +174,7 @@ export async function createBranch(options: {
     logger,
   });
 
-  await git.checkout({ dir, ref });
+  await git.branch({ dir, ref });
 }
 
 /**

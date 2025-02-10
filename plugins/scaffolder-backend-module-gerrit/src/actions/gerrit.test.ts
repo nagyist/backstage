@@ -30,12 +30,11 @@ import path from 'path';
 import { createPublishGerritAction } from './gerrit';
 import { rest } from 'msw';
 import { setupServer } from 'msw/node';
-import { setupRequestMockHandlers } from '@backstage/backend-test-utils';
+import { registerMswTestHooks } from '@backstage/backend-test-utils';
 import { ScmIntegrations } from '@backstage/integration';
 import { ConfigReader } from '@backstage/config';
-import { getVoidLogger } from '@backstage/backend-common';
-import { PassThrough } from 'stream';
 import { initRepoAndPush } from '@backstage/plugin-scaffolder-node';
+import { createMockActionContext } from '@backstage/plugin-scaffolder-node-test-utils';
 
 describe('publish:gerrit', () => {
   const config = new ConfigReader({
@@ -43,6 +42,7 @@ describe('publish:gerrit', () => {
       gerrit: [
         {
           host: 'gerrithost.org',
+          gitilesBaseUrl: 'https://gerrithost.org/gitiles',
           username: 'gerrituser',
           password: 'usertoken',
         },
@@ -53,20 +53,15 @@ describe('publish:gerrit', () => {
   const description = 'for the lols';
   const integrations = ScmIntegrations.fromConfig(config);
   const action = createPublishGerritAction({ integrations, config });
-  const mockContext = {
+  const mockContext = createMockActionContext({
     input: {
       repoUrl:
         'gerrithost.org?owner=owner&workspace=parent&project=project&repo=repo',
       description,
     },
-    workspacePath: 'lol',
-    logger: getVoidLogger(),
-    logStream: new PassThrough(),
-    output: jest.fn(),
-    createTemporaryDirectory: jest.fn(),
-  };
+  });
   const server = setupServer();
-  setupRequestMockHandlers(server);
+  registerMswTestHooks(server);
 
   beforeEach(() => {
     jest.resetAllMocks();
@@ -139,7 +134,7 @@ describe('publish:gerrit', () => {
     );
     expect(mockContext.output).toHaveBeenCalledWith(
       'repoContentsUrl',
-      'https://gerrithost.org/repo/+/refs/heads/master',
+      'https://gerrithost.org/gitiles/repo/+/refs/heads/master',
     );
   });
 
@@ -190,7 +185,7 @@ describe('publish:gerrit', () => {
     );
     expect(mockContext.output).toHaveBeenCalledWith(
       'repoContentsUrl',
-      'https://gerrithost.org/repo/+/refs/heads/master',
+      'https://gerrithost.org/gitiles/repo/+/refs/heads/master',
     );
   });
 
@@ -241,7 +236,7 @@ describe('publish:gerrit', () => {
     );
     expect(mockContext.output).toHaveBeenCalledWith(
       'repoContentsUrl',
-      'https://gerrithost.org/repo/+/refs/heads/master',
+      'https://gerrithost.org/gitiles/repo/+/refs/heads/master',
     );
   });
 
@@ -292,7 +287,7 @@ describe('publish:gerrit', () => {
     );
     expect(mockContext.output).toHaveBeenCalledWith(
       'repoContentsUrl',
-      'https://gerrithost.org/repo/+/refs/heads/main',
+      'https://gerrithost.org/gitiles/repo/+/refs/heads/main',
     );
   });
 

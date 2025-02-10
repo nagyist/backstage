@@ -29,12 +29,14 @@ import {
   EntityKindPicker,
   EntityLifecyclePicker,
   EntityListProvider,
+  EntityListPagination,
   EntityOwnerPicker,
   EntityTagPicker,
   EntityTypePicker,
   UserListFilterKind,
   UserListPicker,
   CatalogFilterLayout,
+  EntityOwnerPickerProps,
 } from '@backstage/plugin-catalog-react';
 import React from 'react';
 import { registerComponentRouteRef } from '../../routes';
@@ -60,6 +62,8 @@ export type DefaultApiExplorerPageProps = {
   initiallySelectedFilter?: UserListFilterKind;
   columns?: TableColumn<CatalogTableRow>[];
   actions?: TableProps<CatalogTableRow>['actions'];
+  ownerPickerMode?: EntityOwnerPickerProps['mode'];
+  pagination?: EntityListPagination;
 };
 
 /**
@@ -67,7 +71,13 @@ export type DefaultApiExplorerPageProps = {
  * @public
  */
 export const DefaultApiExplorerPage = (props: DefaultApiExplorerPageProps) => {
-  const { initiallySelectedFilter = 'all', columns, actions } = props;
+  const {
+    initiallySelectedFilter = 'all',
+    columns,
+    actions,
+    ownerPickerMode,
+    pagination,
+  } = props;
 
   const configApi = useApi(configApiRef);
   const generatedSubtitle = `${
@@ -95,13 +105,13 @@ export const DefaultApiExplorerPage = (props: DefaultApiExplorerPageProps) => {
           )}
           <SupportButton>All your APIs</SupportButton>
         </ContentHeader>
-        <EntityListProvider>
+        <EntityListProvider pagination={pagination}>
           <CatalogFilterLayout>
             <CatalogFilterLayout.Filters>
               <EntityKindPicker initialFilter="api" hidden />
               <EntityTypePicker />
               <UserListPicker initialFilter={initiallySelectedFilter} />
-              <EntityOwnerPicker />
+              <EntityOwnerPicker mode={ownerPickerMode} />
               <EntityLifecyclePicker />
               <EntityTagPicker />
             </CatalogFilterLayout.Filters>

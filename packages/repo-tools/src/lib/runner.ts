@@ -37,6 +37,7 @@ export async function runner(
       port: options.startingPort,
       stopPort: options.startingPort + 1_000,
     }));
+
   const resultsList = await Promise.all(
     packages.map(pkg =>
       limit(async () => {
@@ -65,4 +66,8 @@ export async function runner(
   );
 
   return resultsList;
+}
+
+export async function block() {
+  return new Promise(() => {});
 }

@@ -35,7 +35,7 @@
 
 
 
-FROM node:16-buster AS build
+FROM node:20-buster AS build
 
 RUN mkdir /app
 COPY . /app
@@ -46,7 +46,7 @@ RUN yarn workspace app build
 
 
 
-FROM nginx:mainline@sha256:5f44022eab9198d75939d9eaa5341bc077eca16fa51d4ef32d33f1bd4c8cbe7d
+FROM nginx:mainline
 
 RUN apt-get update && apt-get -y install jq && rm -rf /var/lib/apt/lists/*
 
@@ -55,4 +55,4 @@ COPY docker/default.conf.template /etc/nginx/templates/default.conf.template
 
 COPY docker/inject-config.sh /docker-entrypoint.d/40-inject-config.sh
 
-ENV PORT 80
+ENV PORT=80

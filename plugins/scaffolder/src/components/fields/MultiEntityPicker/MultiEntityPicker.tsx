@@ -25,15 +25,17 @@ import {
 import { useApi } from '@backstage/core-plugin-api';
 import {
   catalogApiRef,
-  humanizeEntityRef,
+  entityPresentationApiRef,
+  EntityDisplayName,
+  EntityRefPresentationSnapshot,
 } from '@backstage/plugin-catalog-react';
-import { TextField } from '@material-ui/core';
+import TextField from '@material-ui/core/TextField';
 import FormControl from '@material-ui/core/FormControl';
 import Autocomplete, {
   AutocompleteChangeReason,
 } from '@material-ui/lab/Autocomplete';
-import React, { useCallback, useEffect } from 'react';
-import useAsync from 'react-use/lib/useAsync';
+import React, { useCallback, useEffect, useState } from 'react';
+import useAsync from 'react-use/esm/useAsync';
 import { FieldValidation } from '@rjsf/utils';
 import {
   MultiEntityPickerFilterQueryValue,
@@ -41,6 +43,7 @@ import {
   MultiEntityPickerUiOptions,
   MultiEntityPickerFilterQuery,
 } from './schema';
+import { VirtualizedListbox } from '../VirtualizedListbox';
 
 export { MultiEntityPickerSchema } from './schema';
 
@@ -62,34 +65,36 @@ export const MultiEntityPicker = (props: MultiEntityPickerProps) => {
   const defaultKind = uiSchema['ui:options']?.defaultKind;
   const defaultNamespace =
     uiSchema['ui:options']?.defaultNamespace || undefined;
+  const [noOfItemsSelected, setNoOfItemsSelected] = useState(0);
 
   const catalogApi = useApi(catalogApiRef);
-
+  const entityPresentationApi = useApi(entityPresentationApiRef);
   const { value: entities, loading } = useAsync(async () => {
     const { items } = await catalogApi.getEntities(
       catalogFilter ? { filter: catalogFilter } : undefined,
     );
-    return items;
+    const entityRefToPresentation = new Map<
+      string,
+      EntityRefPresentationSnapshot
+    >(
+      await Promise.all(
+        items.map(async item => {
+          const presentation = await entityPresentationApi.forEntity(item)
+            .promise;
+          return [stringifyEntityRef(item), presentation] as [
+            string,
+            EntityRefPresentationSnapshot,
+          ];
+        }),
+      ),
+    );
+    return { entities: items, entityRefToPresentation };
   });
   const allowArbitraryValues =
     uiSchema['ui:options']?.allowArbitraryValues ?? true;
 
-  const getLabel = useCallback(
-    (ref: string) => {
-      try {
-        return humanizeEntityRef(
-          parseEntityRef(ref, { defaultKind, defaultNamespace }),
-          {
-            defaultKind,
-            defaultNamespace,
-          },
-        );
-      } catch (err) {
-        return ref;
-      }
-    },
-    [defaultKind, defaultNamespace],
-  );
+  // if not specified, maxItems defaults to undefined
+  const maxItems = props.schema.maxItems;
 
   const onSelect = useCallback(
     (_: any, refs: (string | Entity)[], reason: AutocompleteChangeReason) => {
@@ -115,7 +120,7 @@ export const MultiEntityPicker = (props: MultiEntityPickerProps) => {
             }
 
             // We need to check against formData here as that's the previous value for this field.
-            if (formData.includes(ref) || allowArbitraryValues) {
+            if (formData?.includes(ref) || allowArbitraryValues) {
               return entityRef;
             }
           }
@@ -124,16 +129,17 @@ export const MultiEntityPicker = (props: MultiEntityPickerProps) => {
         })
         .filter(ref => ref !== undefined) as string[];
 
+      setNoOfItemsSelected(values.length);
       onChange(values);
     },
     [onChange, formData, defaultKind, defaultNamespace, allowArbitraryValues],
   );
 
   useEffect(() => {
-    if (entities?.length === 1) {
-      onChange([stringifyEntityRef(entities[0])]);
+    if (required && !allowArbitraryValues && entities?.entities?.length === 1) {
+      onChange([stringifyEntityRef(entities?.entities[0])]);
     }
-  }, [entities, onChange]);
+  }, [entities, onChange, required, allowArbitraryValues]);
 
   return (
     <FormControl
@@ -144,23 +150,24 @@ export const MultiEntityPicker = (props: MultiEntityPickerProps) => {
       <Autocomplete
         multiple
         filterSelectedOptions
-        disabled={entities?.length === 1}
-        id={idSchema?.$id}
-        value={
-          // Since free solo can be enabled, attempt to parse as a full entity ref first, then fall
-          //  back to the given value.
-          entities?.filter(
-            e => formData && formData.includes(stringifyEntityRef(e)),
-          ) ?? (allowArbitraryValues && formData ? formData.map(getLabel) : [])
+        disabled={
+          required && !allowArbitraryValues && entities?.entities?.length === 1
         }
+        id={idSchema?.$id}
+        defaultValue={formData}
         loading={loading}
         onChange={onSelect}
-        options={entities || []}
+        options={entities?.entities || []}
+        renderOption={option => <EntityDisplayName entityRef={option} />}
         getOptionLabel={option =>
           // option can be a string due to freeSolo.
           typeof option === 'string'
             ? option
-            : humanizeEntityRef(option, { defaultKind, defaultNamespace })!
+            : entities?.entityRefToPresentation.get(stringifyEntityRef(option))
+                ?.entityRef!
+        }
+        getOptionDisabled={_options =>
+          maxItems ? noOfItemsSelected >= maxItems : false
         }
         autoSelect
         freeSolo={allowArbitraryValues}
@@ -170,12 +177,19 @@ export const MultiEntityPicker = (props: MultiEntityPickerProps) => {
             label={title}
             margin="dense"
             helperText={description}
-            FormHelperTextProps={{ margin: 'dense', style: { marginLeft: 0 } }}
+            FormHelperTextProps={{
+              margin: 'dense',
+              style: { marginLeft: 0 },
+            }}
             variant="outlined"
             required={required}
-            InputProps={params.InputProps}
+            InputProps={{
+              ...params.InputProps,
+              required: formData?.length === 0 && required,
+            }}
           />
         )}
+        ListboxComponent={VirtualizedListbox}
       />
     </FormControl>
   );

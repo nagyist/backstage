@@ -19,19 +19,14 @@ import {
   parseEntityRef,
   stringifyEntityRef,
 } from '@backstage/catalog-model';
-import {
-  Box,
-  Checkbox,
-  FormControlLabel,
-  TextField,
-  Typography,
-  makeStyles,
-  Tooltip,
-} from '@material-ui/core';
+import Box from '@material-ui/core/Box';
+import Checkbox from '@material-ui/core/Checkbox';
+import FormControlLabel from '@material-ui/core/FormControlLabel';
+import Typography from '@material-ui/core/Typography';
+import Tooltip from '@material-ui/core/Tooltip';
+import { makeStyles } from '@material-ui/core/styles';
 import CheckBoxIcon from '@material-ui/icons/CheckBox';
 import CheckBoxOutlineBlankIcon from '@material-ui/icons/CheckBoxOutlineBlank';
-import ExpandMoreIcon from '@material-ui/icons/ExpandMore';
-import { Autocomplete } from '@material-ui/lab';
 import React, { useEffect, useMemo, useState } from 'react';
 import { useEntityList } from '../../hooks/useEntityListProvider';
 import { EntityOwnerFilter } from '../../filters';
@@ -42,12 +37,17 @@ import { humanizeEntity, humanizeEntityRef } from '../EntityRefLink/humanize';
 import { useFetchEntities } from './useFetchEntities';
 import { withStyles } from '@material-ui/core/styles';
 import { useEntityPresentation } from '../../apis';
+import { catalogReactTranslationRef } from '../../translation';
+import { useTranslationRef } from '@backstage/core-plugin-api/alpha';
+import { CatalogAutocomplete } from '../CatalogAutocomplete';
 
 /** @public */
 export type CatalogReactEntityOwnerPickerClassKey = 'input';
 
 const useStyles = makeStyles(
   {
+    root: {},
+    label: {},
     input: {},
     fullWidth: { width: '100%' },
     boxLabel: {
@@ -56,10 +56,11 @@ const useStyles = makeStyles(
       overflow: 'hidden',
     },
   },
-  {
-    name: 'CatalogReactEntityOwnerPicker',
-  },
+  { name: 'CatalogReactEntityOwnerPicker' },
 );
+
+/** @public */
+export type FixedWidthFormControlLabelClassKey = 'label' | 'root';
 
 const FixedWidthFormControlLabel = withStyles(
   _theme => ({
@@ -130,13 +131,14 @@ export const EntityOwnerPicker = (props?: EntityOwnerPickerProps) => {
   } = useEntityList();
 
   const [text, setText] = useState('');
+  const { t } = useTranslationRef(catalogReactTranslationRef);
 
   const queryParamOwners = useMemo(
     () => [ownersParameter].flat().filter(Boolean) as string[],
     [ownersParameter],
   );
 
-  const [selectedOwners, setSelectedOwners] = useState(
+  const [selectedOwners, setSelectedOwners] = useState<string[]>(
     queryParamOwners.length ? queryParamOwners : filters.owners?.values ?? [],
   );
 
@@ -174,80 +176,70 @@ export const EntityOwnerPicker = (props?: EntityOwnerPickerProps) => {
   }
 
   return (
-    <Box pb={1} pt={1}>
-      <Typography variant="button" component="label">
-        Owner
-        <Autocomplete
-          multiple
-          disableCloseOnSelect
-          loading={loading}
-          options={availableOwners}
-          value={selectedOwners as unknown as Entity[]}
-          getOptionSelected={(o, v) => {
-            if (typeof v === 'string') {
-              return stringifyEntityRef(o) === v;
-            }
-            return o === v;
-          }}
-          getOptionLabel={o => {
-            const entity =
-              typeof o === 'string'
-                ? cache.getEntity(o) ||
-                  parseEntityRef(o, {
-                    defaultKind: 'group',
-                    defaultNamespace: 'default',
-                  })
-                : o;
-            return humanizeEntity(entity, humanizeEntityRef(entity));
-          }}
-          onChange={(_: object, owners) => {
-            setText('');
-            setSelectedOwners(
-              owners.map(e => {
-                const entityRef =
-                  typeof e === 'string' ? e : stringifyEntityRef(e);
+    <Box className={classes.root} pb={1} pt={1}>
+      <CatalogAutocomplete<Entity, true>
+        label={t('entityOwnerPicker.title')}
+        multiple
+        disableCloseOnSelect
+        loading={loading}
+        options={availableOwners}
+        value={selectedOwners as unknown as Entity[]}
+        getOptionSelected={(o, v) => {
+          if (typeof v === 'string') {
+            return stringifyEntityRef(o) === v;
+          }
+          return o === v;
+        }}
+        getOptionLabel={o => {
+          const entity =
+            typeof o === 'string'
+              ? cache.getEntity(o) ||
+                parseEntityRef(o, {
+                  defaultKind: 'group',
+                  defaultNamespace: 'default',
+                })
+              : o;
+          return humanizeEntity(entity, humanizeEntityRef(entity));
+        }}
+        onChange={(_: object, owners) => {
+          setText('');
+          setSelectedOwners(
+            owners.map(e => {
+              const entityRef =
+                typeof e === 'string' ? e : stringifyEntityRef(e);
 
-                if (typeof e !== 'string') {
-                  cache.setEntity(e);
-                }
-                return entityRef;
-              }),
-            );
-          }}
-          filterOptions={x => x}
-          renderOption={(entity, { selected }) => {
-            return <RenderOptionLabel entity={entity} isSelected={selected} />;
-          }}
-          size="small"
-          popupIcon={<ExpandMoreIcon data-testid="owner-picker-expand" />}
-          renderInput={params => (
-            <TextField
-              {...params}
-              className={classes.input}
-              onChange={e => {
-                setText(e.currentTarget.value);
-              }}
-              variant="outlined"
-            />
-          )}
-          ListboxProps={{
-            onScroll: (e: React.MouseEvent) => {
-              const element = e.currentTarget;
-              const hasReachedEnd =
-                Math.abs(
-                  element.scrollHeight -
-                    element.clientHeight -
-                    element.scrollTop,
-                ) < 1;
-
-              if (hasReachedEnd && value?.cursor) {
-                handleFetch({ items: value.items, cursor: value.cursor });
+              if (typeof e !== 'string') {
+                cache.setEntity(e);
               }
-            },
-            'data-testid': 'owner-picker-listbox',
-          }}
-        />
-      </Typography>
+              return entityRef;
+            }),
+          );
+        }}
+        filterOptions={x => x}
+        renderOption={(entity, { selected }) => {
+          return <RenderOptionLabel entity={entity} isSelected={selected} />;
+        }}
+        name="owner-picker"
+        onInputChange={(_e, inputValue) => {
+          setText(inputValue);
+        }}
+        ListboxProps={{
+          onScroll: (e: React.MouseEvent) => {
+            const element = e.currentTarget;
+            const hasReachedEnd =
+              Math.abs(
+                element.scrollHeight - element.clientHeight - element.scrollTop,
+              ) < 1;
+
+            if (hasReachedEnd && value?.cursor) {
+              handleFetch({ items: value.items, cursor: value.cursor });
+            }
+          },
+          'data-testid': 'owner-picker-listbox',
+        }}
+        LabelProps={{ className: classes.label }}
+        TextFieldProps={{ className: classes.input }}
+      />
     </Box>
   );
 };

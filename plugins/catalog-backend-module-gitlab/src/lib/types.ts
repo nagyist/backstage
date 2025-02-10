@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-import { TaskScheduleDefinition } from '@backstage/backend-tasks';
+import { SchedulerServiceTaskScheduleDefinition } from '@backstage/backend-plugin-api';
 import { GroupEntity, UserEntity } from '@backstage/catalog-model';
 import { GitLabIntegrationConfig } from '@backstage/integration';
 
@@ -34,6 +34,9 @@ export type GitlabProjectForkedFrom = {
 
 export type GitLabProject = {
   id: number;
+  description?: string;
+  name?: string;
+  path?: string;
   default_branch?: string;
   archived: boolean;
   last_activity_at: string;
@@ -57,6 +60,7 @@ export type GitLabUser = {
   avatar_url: string;
   groups?: GitLabGroup[];
   group_saml_identity?: GitLabGroupSamlIdentity;
+  is_using_seat?: boolean; // Only available in responses from the group members endpoint
 };
 
 /**
@@ -76,6 +80,7 @@ export type GitLabGroup = {
   name: string;
   full_path: string;
   description?: string;
+  visibility?: string;
   parent_id?: number;
 };
 
@@ -115,6 +120,7 @@ export type GitLabDescendantGroupsResponse = {
             name: string;
             description: string;
             fullPath: string;
+            visibility: string;
             parent: {
               id: string;
             };
@@ -144,6 +150,12 @@ export type GitlabProviderConfig = {
    * Accepts only groups under the provided path (which will be stripped)
    */
   group: string;
+
+  /**
+   * If true, the provider will only ingest users that are part of the configured group.
+   */
+  restrictUsersToGroup?: boolean;
+
   /**
    * ???
    */
@@ -178,12 +190,64 @@ export type GitlabProviderConfig = {
    */
   groupPattern: RegExp;
 
+  /**
+   * If true, the provider will also add inherited (ascendant) users to the ingested groups.
+   * See: https://docs.gitlab.com/ee/api/graphql/reference/#groupmemberrelation
+   *
+   * @deprecated Use the `relations` array to configure group membership relations instead.
+   **/
+  allowInherited?: boolean;
+
+  /**
+   * Specifies the types of group membership relations that should be included when ingesting data.
+   *
+   * The following values are valid:
+   * - 'DIRECT': Direct members of the group. This is the default relation and is always included.
+   * - 'INHERITED': Members inherited from parent (ascendant) groups.
+   * - 'DESCENDANTS': Members from child (descendant) groups.
+   * - 'SHARED_FROM_GROUPS': Members shared from other groups.
+   *
+   * See: https://docs.gitlab.com/ee/api/graphql/reference/#groupmemberrelation
+   *
+   * If the `relations` array is provided in the app-config.yaml, it should contain any combination of the above values.
+   * The 'DIRECT' relation is automatically included and cannot be excluded, even if not specified.
+   * Example configuration:
+   *
+   * ```yaml
+   * catalog:
+   *   providers:
+   *     gitlab:
+   *       development:
+   *         relations:
+   *           - INHERITED
+   *           - DESCENDANTS
+   *           - SHARED_FROM_GROUPS
+   * ```
+   */
+  relations?: string[];
+
   orgEnabled?: boolean;
-  schedule?: TaskScheduleDefinition;
+  schedule?: SchedulerServiceTaskScheduleDefinition;
   /**
    * If the project is a fork, skip repository
    */
   skipForkedRepos?: boolean;
+  /**
+   * If the project is archived, include repository
+   */
+  includeArchivedRepos?: boolean;
+  /**
+   * List of repositories to exclude from discovery, should be the full path to the repository, e.g. `group/project`
+   * Paths should not start or end with a slash.
+   */
+  excludeRepos?: string[];
+
+  /**
+   * If true, users without a seat will be included in the catalog.
+   * Group/Application Access Tokens are still filtered out but you might find service accounts or other users without a seat.
+   * Defaults to `false`
+   */
+  includeUsersWithoutSeat?: boolean;
 };
 
 /**
@@ -240,3 +304,72 @@ export interface GroupTransformerOptions {
   providerConfig: GitlabProviderConfig;
   groupNameTransformer: GroupNameTransformer;
 }
+
+/**
+ * Represents the schema for system hook events related to groups.
+ * https://docs.gitlab.com/ee/administration/system_hooks.html
+ *
+ * @public
+ */
+export type SystemHookBaseGroupEventsSchema = {
+  created_at: string;
+  updated_at: string;
+  name: string;
+  path: string;
+  full_path: string;
+  group_id: number;
+};
+
+/**
+ * Represents the schema for system hook events related to users.
+ * https://docs.gitlab.com/ee/administration/system_hooks.html
+ *
+ * @public
+ */
+export type SystemHookBaseUserEventsSchema = {
+  created_at: string;
+  updated_at: string;
+  email: string;
+  name: string;
+  username: string;
+  user_id: number;
+};
+
+/**
+ * Represents the schema for system hook events related to user memberships.
+ * https://docs.gitlab.com/ee/administration/system_hooks.html
+ *
+ * @public
+ */
+export type SystemHookBaseMembershipEventsSchema = {
+  created_at: string;
+  updated_at: string;
+  group_name: string;
+  group_path: string;
+  group_id: number;
+  user_username: string;
+  user_email: string;
+  user_name: string;
+  user_id: number;
+  group_access: string;
+};
+
+/**
+ * Represents the schema for system hook events related to projects.
+ * https://docs.gitlab.com/ee/administration/system_hooks.html
+ *
+ * @public
+ */
+export type SystemHookBaseProjectEventsSchema = {
+  created_at: string;
+  updated_at: string;
+  event_name: string;
+  name: string;
+  owner_email: string;
+  owner_name: string;
+  owners: { name: string; email: string }[];
+  path: string;
+  path_with_namespace: string;
+  project_id: number;
+  project_visibility: string;
+};

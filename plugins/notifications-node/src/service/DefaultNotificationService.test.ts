@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import { setupRequestMockHandlers } from '@backstage/test-utils';
+import { registerMswTestHooks } from '@backstage/test-utils';
 import { rest } from 'msw';
 import { setupServer } from 'msw/node';
 import { NotificationPayload } from '@backstage/plugin-notifications-common';
@@ -22,8 +22,7 @@ import {
   DefaultNotificationService,
   NotificationSendOptions,
 } from './DefaultNotificationService';
-
-const server = setupServer();
+import { mockCredentials, mockServices } from '@backstage/backend-test-utils';
 
 const testNotification: NotificationPayload = {
   title: 'Notification 1',
@@ -32,23 +31,19 @@ const testNotification: NotificationPayload = {
 };
 
 describe('DefaultNotificationService', () => {
-  setupRequestMockHandlers(server);
-  const mockBaseUrl = 'http://backstage/api/notifications';
-  const discoveryApi = {
-    getBaseUrl: async () => mockBaseUrl,
-    getExternalBaseUrl: async () => mockBaseUrl,
-  };
-  const tokenManager = {
-    getToken: async () => ({ token: '1234' }),
-    authenticate: jest.fn(),
-  };
+  const server = setupServer();
+  registerMswTestHooks(server);
+
+  const discovery = mockServices.discovery.mock({
+    getBaseUrl: jest.fn().mockResolvedValue('http://example.com'),
+  });
+  const auth = mockServices.auth();
 
   let service: DefaultNotificationService;
-  beforeEach(() => {
+  beforeEach(async () => {
     service = DefaultNotificationService.create({
-      discovery: discoveryApi,
-      tokenManager,
-      pluginId: 'test',
+      auth,
+      discovery,
     });
   });
 
@@ -60,14 +55,19 @@ describe('DefaultNotificationService', () => {
       };
 
       server.use(
-        rest.post(`${mockBaseUrl}/`, async (req, res, ctx) => {
+        rest.post('http://example.com', async (req, res, ctx) => {
           const json = await req.json();
-          expect(json).toEqual({ ...body, origin: 'plugin-test' });
-          expect(req.headers.get('Authorization')).toEqual('Bearer 1234');
+          expect(json).toEqual(body);
+          expect(req.headers.get('Authorization')).toBe(
+            mockCredentials.service.header({
+              onBehalfOf: await auth.getOwnServiceCredentials(),
+              targetPluginId: 'notifications',
+            }),
+          );
           return res(ctx.status(200));
         }),
       );
-      await expect(service.send(body)).resolves.not.toThrow();
+      await expect(service.send(body)).resolves.toBeUndefined();
     });
 
     it('should throw error if failing', async () => {
@@ -77,14 +77,21 @@ describe('DefaultNotificationService', () => {
       };
 
       server.use(
-        rest.post(`${mockBaseUrl}/`, async (req, res, ctx) => {
+        rest.post('http://example.com', async (req, res, ctx) => {
           const json = await req.json();
-          expect(json).toEqual({ ...body, origin: 'plugin-test' });
-          expect(req.headers.get('Authorization')).toEqual('Bearer 1234');
+          expect(json).toEqual(body);
+          expect(req.headers.get('Authorization')).toBe(
+            mockCredentials.service.header({
+              onBehalfOf: await auth.getOwnServiceCredentials(),
+              targetPluginId: 'notifications',
+            }),
+          );
           return res(ctx.status(400));
         }),
       );
-      await expect(service.send(body)).rejects.toThrow();
+      await expect(service.send(body)).rejects.toThrow(
+        'Request failed with status 400',
+      );
     });
   });
 });

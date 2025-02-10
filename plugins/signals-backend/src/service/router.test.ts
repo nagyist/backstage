@@ -13,42 +13,32 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-import {
-  getVoidLogger,
-  PluginEndpointDiscovery,
-} from '@backstage/backend-common';
+
 import express from 'express';
 import request from 'supertest';
-
 import { createRouter } from './router';
-import { EventBroker } from '@backstage/plugin-events-node';
-import { IdentityApi } from '@backstage/plugin-auth-node';
+import { mockErrorHandler, mockServices } from '@backstage/backend-test-utils';
 
-const eventBrokerMock: jest.Mocked<EventBroker> = {
-  subscribe: jest.fn(),
-  publish: jest.fn(),
-};
-
-const identityApiMock: jest.Mocked<IdentityApi> = {
-  getIdentity: jest.fn(),
-};
-
-const discovery: jest.Mocked<PluginEndpointDiscovery> = {
-  getBaseUrl: jest.fn().mockResolvedValue('/api/signals'),
-  getExternalBaseUrl: jest.fn(),
-};
+const eventsServiceMock = mockServices.events.mock();
+const discovery = mockServices.discovery.mock({
+  getBaseUrl: async () => '/api/signals',
+});
+const userInfo = mockServices.userInfo.mock();
 
 describe('createRouter', () => {
   let app: express.Express;
 
   beforeAll(async () => {
     const router = await createRouter({
-      logger: getVoidLogger(),
-      identity: identityApiMock,
-      eventBroker: eventBrokerMock,
+      logger: mockServices.logger.mock(),
+      events: eventsServiceMock,
       discovery,
+      userInfo,
+      config: mockServices.rootConfig(),
+      lifecycle: mockServices.lifecycle.mock(),
+      auth: mockServices.auth(),
     });
-    app = express().use(router);
+    app = express().use(router).use(mockErrorHandler());
   });
 
   beforeEach(() => {

@@ -24,10 +24,8 @@ import {
   createTemplateAction,
   parseRepoUrl,
 } from '@backstage/plugin-scaffolder-node';
-import {
-  createGithubRepoWithCollaboratorsAndTopics,
-  getOctokitOptions,
-} from './helpers';
+import { createGithubRepoWithCollaboratorsAndTopics } from './helpers';
+import { getOctokitOptions } from '../util';
 import * as inputProps from './inputProperties';
 import * as outputProps from './outputProperties';
 import { examples } from './githubRepoCreate.examples';
@@ -95,7 +93,14 @@ export function createGithubRepoCreateAction(options: {
     topics?: string[];
     repoVariables?: { [key: string]: string };
     secrets?: { [key: string]: string };
+    oidcCustomization?: {
+      useDefault: boolean;
+      includeClaimKeys?: string[];
+    };
     requireCommitSigning?: boolean;
+    requiredLinearHistory?: boolean;
+    customProperties?: { [key: string]: string };
+    subscribe?: boolean;
   }>({
     id: 'github:repo:create',
     description: 'Creates a GitHub repository.',
@@ -133,7 +138,11 @@ export function createGithubRepoCreateAction(options: {
           topics: inputProps.topics,
           repoVariables: inputProps.repoVariables,
           secrets: inputProps.secrets,
+          oidcCustomization: inputProps.oidcCustomization,
           requiredCommitSigning: inputProps.requiredCommitSigning,
+          requiredLinearHistory: inputProps.requiredLinearHistory,
+          customProperties: inputProps.customProperties,
+          subscribe: inputProps.subscribe,
         },
       },
       output: {
@@ -165,22 +174,27 @@ export function createGithubRepoCreateAction(options: {
         topics,
         repoVariables,
         secrets,
+        oidcCustomization,
+        customProperties,
+        subscribe,
         token: providedToken,
       } = ctx.input;
+
+      const { host, owner, repo } = parseRepoUrl(repoUrl, integrations);
+
+      if (!owner) {
+        throw new InputError('Invalid repository owner provided in repoUrl');
+      }
 
       const octokitOptions = await getOctokitOptions({
         integrations,
         credentialsProvider: githubCredentialsProvider,
         token: providedToken,
-        repoUrl: repoUrl,
+        host,
+        owner,
+        repo,
       });
       const client = new Octokit(octokitOptions);
-
-      const { owner, repo } = parseRepoUrl(repoUrl, integrations);
-
-      if (!owner) {
-        throw new InputError('Invalid repository owner provided in repoUrl');
-      }
 
       const newRepo = await createGithubRepoWithCollaboratorsAndTopics(
         client,
@@ -204,6 +218,9 @@ export function createGithubRepoCreateAction(options: {
         topics,
         repoVariables,
         secrets,
+        oidcCustomization,
+        customProperties,
+        subscribe,
         ctx.logger,
       );
 

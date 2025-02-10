@@ -13,13 +13,19 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-import { EventBroker, EventParams } from '@backstage/plugin-events-node';
+
+import { EventParams, EventsService } from '@backstage/plugin-events-node';
 import { SignalPayload } from '@backstage/plugin-signals-node';
+import crypto from 'crypto';
 import { RawData, WebSocket } from 'ws';
 import { v4 as uuid } from 'uuid';
 import { JsonObject } from '@backstage/types';
-import { BackstageIdentityResponse } from '@backstage/plugin-auth-node';
-import { LoggerService } from '@backstage/backend-plugin-api';
+import {
+  BackstageUserInfo,
+  LifecycleService,
+  LoggerService,
+} from '@backstage/backend-plugin-api';
+import { Config } from '@backstage/config';
 
 /**
  * @internal
@@ -30,15 +36,17 @@ export type SignalConnection = {
   ws: WebSocket;
   ownershipEntityRefs: string[];
   subscriptions: Set<string>;
+  isAlive: boolean;
 };
 
 /**
  * @internal
  */
 export type SignalManagerOptions = {
-  // TODO: Remove optional when events-backend can offer this service
-  eventBroker?: EventBroker;
+  events: EventsService;
+  config: Config;
   logger: LoggerService;
+  lifecycle: LifecycleService;
 };
 
 /** @internal */
@@ -47,51 +55,104 @@ export class SignalManager {
     string,
     SignalConnection
   >();
-  private eventBroker?: EventBroker;
+  private events: EventsService;
   private logger: LoggerService;
+  private pingInterval: ReturnType<typeof setInterval> | undefined;
 
   static create(options: SignalManagerOptions) {
     return new SignalManager(options);
   }
 
   private constructor(options: SignalManagerOptions) {
-    ({ eventBroker: this.eventBroker, logger: this.logger } = options);
+    this.events = options.events;
 
-    this.eventBroker?.subscribe({
-      supportsEventTopics: () => ['signals'],
-      onEvent: (params: EventParams<SignalPayload>) =>
-        this.onEventBrokerEvent(params),
+    // Use a unique subscriber ID for each signals instance, in order to fan-out
+    // all events to each signals instance. This ensures that events always
+    // reach users in a scaled deployment.
+    const id = `signals-${crypto.randomBytes(8).toString('hex')}`;
+    this.logger = options.logger.child({ subscriberId: id });
+    this.logger.info(`Signals manager is subscribing to signals events`);
+
+    this.events.subscribe({
+      id,
+      topics: ['signals'],
+      onEvent: (params: EventParams) =>
+        this.onEventBrokerEvent(params.eventPayload as SignalPayload),
+    });
+
+    options.lifecycle.addShutdownHook(() => this.onShutdown());
+  }
+
+  private ping() {
+    this.connections.forEach(conn => {
+      if (!conn.isAlive) {
+        this.logger.debug(`Connection ${conn.id} is not alive, terminating`);
+        conn.ws.terminate();
+        return;
+      }
+
+      conn.isAlive = false;
+      conn.ws.ping();
     });
   }
 
-  addConnection(ws: WebSocket, identity?: BackstageIdentityResponse) {
-    const id = uuid();
+  private onShutdown() {
+    if (this.pingInterval) {
+      clearInterval(this.pingInterval);
+    }
 
+    // TODO: Unsubscribe from events?
+
+    this.connections.forEach(conn => {
+      conn.ws.terminate();
+    });
+    this.connections.clear();
+  }
+
+  addConnection(ws: WebSocket, identity?: BackstageUserInfo) {
+    // Start pinging on first connection
+    if (!this.pingInterval) {
+      this.pingInterval = setInterval(() => this.ping(), 30000);
+    }
+
+    const id = uuid();
     const conn = {
       id,
-      user: identity?.identity.userEntityRef ?? 'user:default/guest',
+      user: identity?.userEntityRef ?? 'user:default/guest',
       ws,
-      ownershipEntityRefs: identity?.identity.ownershipEntityRefs ?? [
+      ownershipEntityRefs: identity?.ownershipEntityRefs ?? [
         'user:default/guest',
       ],
       subscriptions: new Set<string>(),
+      isAlive: true,
     };
 
     this.connections.set(id, conn);
 
+    this.logger.debug(`Connection ${id} connected`);
     ws.on('error', (err: Error) => {
-      this.logger.info(
+      this.logger.error(
         `Error occurred with connection ${id}: ${err}, closing connection`,
       );
-      ws.close();
+      ws.terminate();
       this.connections.delete(id);
     });
 
     ws.on('close', (code: number, reason: Buffer) => {
-      this.logger.info(
+      this.logger.debug(
         `Connection ${id} closed with code ${code}, reason: ${reason}`,
       );
+      ws.terminate();
       this.connections.delete(id);
+    });
+
+    ws.on('ping', () => {
+      conn.isAlive = true;
+      ws.pong();
+    });
+
+    ws.on('pong', () => {
+      conn.isAlive = true;
     });
 
     ws.on('message', (data: RawData, isBinary: boolean) => {
@@ -112,22 +173,19 @@ export class SignalManager {
 
   private handleMessage(connection: SignalConnection, message: JsonObject) {
     if (message.action === 'subscribe' && message.channel) {
-      this.logger.info(
+      this.logger.debug(
         `Connection ${connection.id} subscribed to ${message.channel}`,
       );
       connection.subscriptions.add(message.channel as string);
     } else if (message.action === 'unsubscribe' && message.channel) {
-      this.logger.info(
+      this.logger.debug(
         `Connection ${connection.id} unsubscribed from ${message.channel}`,
       );
       connection.subscriptions.delete(message.channel as string);
     }
   }
 
-  private async onEventBrokerEvent(
-    params: EventParams<SignalPayload>,
-  ): Promise<void> {
-    const { eventPayload } = params;
+  private async onEventBrokerEvent(eventPayload: SignalPayload): Promise<void> {
     if (!eventPayload.channel || !eventPayload.message) {
       return;
     }
@@ -135,8 +193,10 @@ export class SignalManager {
     const { channel, recipients, message } = eventPayload;
     const jsonMessage = JSON.stringify({ channel, message });
     let users: string[] = [];
-    if (recipients !== null) {
-      users = Array.isArray(recipients) ? recipients : [recipients];
+    if (recipients.type === 'user') {
+      users = Array.isArray(recipients.entityRef)
+        ? recipients.entityRef
+        : [recipients.entityRef];
     }
 
     // Actual websocket message sending
@@ -144,9 +204,10 @@ export class SignalManager {
       if (!conn.subscriptions.has(channel)) {
         return;
       }
-      // Sending to all users can be done with null
+
+      // Sending to all users can be done with broadcast
       if (
-        recipients !== null &&
+        recipients.type !== 'broadcast' &&
         !conn.ownershipEntityRefs.some((ref: string) => users.includes(ref))
       ) {
         return;

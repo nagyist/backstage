@@ -13,11 +13,11 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 import { KeyObject } from 'crypto';
 import * as crypto from 'crypto';
 import { JWTHeaderParameters, decodeJwt } from 'jose';
 import NodeCache from 'node-cache';
-import fetch from 'node-fetch';
 import { PassportProfile, ProfileInfo } from '@backstage/plugin-auth-node';
 import { AuthenticationError } from '@backstage/errors';
 
@@ -70,6 +70,18 @@ export const makeProfileInfo = (
   };
 };
 
+const getPublicKeyEndpoint = (region: string) => {
+  if (region.startsWith('us-gov')) {
+    return `https://s3-${encodeURIComponent(
+      region,
+    )}.amazonaws.com/aws-elb-public-keys-prod-${encodeURIComponent(region)}`;
+  }
+
+  return `https://public-keys.auth.elb.${encodeURIComponent(
+    region,
+  )}.amazonaws.com`;
+};
+
 export const provisionKeyCache = (region: string, keyCache: NodeCache) => {
   return async (header: JWTHeaderParameters): Promise<KeyObject> => {
     if (!header.kid) {
@@ -79,10 +91,9 @@ export const provisionKeyCache = (region: string, keyCache: NodeCache) => {
     if (optionalCacheKey) {
       return crypto.createPublicKey(optionalCacheKey);
     }
+
     const keyText: string = await fetch(
-      `https://public-keys.auth.elb.${encodeURIComponent(
-        region,
-      )}.amazonaws.com/${encodeURIComponent(header.kid)}`,
+      `${getPublicKeyEndpoint(region)}/${encodeURIComponent(header.kid)}`,
     ).then(response => response.text());
 
     const keyValue = crypto.createPublicKey(keyText);
