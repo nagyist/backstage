@@ -112,8 +112,8 @@ describe('end-to-end', () => {
       entryPoint,
       ['generate', '--no-docker', '--legacyCopyReadmeMdToIndexMd'],
       {
-        legacyCwd,
-        timeout,
+        cwd: legacyCwd,
+        timeout: timeout,
       },
     );
     expect(proc.stdout).toContain('Successfully generated docs');
