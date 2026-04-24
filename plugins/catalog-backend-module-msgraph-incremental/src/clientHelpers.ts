@@ -42,12 +42,9 @@ export async function requestOnePage<T>(
   const { query, queryMode, nextLink, signal } = options;
   const appliedQueryMode = query?.search ? 'advanced' : queryMode ?? 'basic';
 
-  // $count=true is required for advanced queries using ne/not in $filter or $search
-  if (
-    appliedQueryMode === 'advanced' &&
-    query &&
-    (query.filter || query.search)
-  ) {
+  // Microsoft Graph requires $count=true whenever ConsistencyLevel: eventual is set,
+  // including plain listing requests with no $filter or $search.
+  if (appliedQueryMode === 'advanced' && query) {
     query.count = true;
   }
 

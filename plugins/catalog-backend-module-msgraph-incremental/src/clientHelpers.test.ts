@@ -75,6 +75,24 @@ describe('requestOnePage', () => {
     );
   });
 
+  it('adds ConsistencyLevel and $count for advanced mode without filter', async () => {
+    (client.requestApi as jest.Mock).mockResolvedValue(
+      makeResponse(200, { value: [] }),
+    );
+
+    await requestOnePage(client, 'groups', {
+      query: { top: 999 },
+      queryMode: 'advanced',
+    });
+
+    expect(client.requestApi).toHaveBeenCalledWith(
+      'groups',
+      expect.objectContaining({ count: true }),
+      { ConsistencyLevel: 'eventual' },
+      undefined,
+    );
+  });
+
   it('auto-promotes to advanced mode when $search is present', async () => {
     (client.requestApi as jest.Mock).mockResolvedValue(
       makeResponse(200, { value: [] }),
