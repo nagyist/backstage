@@ -29,11 +29,11 @@ Poor candidates — avoid these:
 - Component lifecycle signals — mounts, unmounts, re-renders, effect firings, data fetches. These describe the machinery of the UI, not the user, and will fire in plenty of contexts the user never initiated (route prefetches, Suspense boundaries, tab switches). Narrow exceptions exist for terminal states the user _lands on_ (e.g. `not-found`).
 - Events whose `action` and `subject` duplicate what is already captured upstream.
 
-If you can't answer the question _"what question does this event help someone answer?"_ in one sentence, it's probably best not add the event.
+If you can't answer the question _"what question does this event help someone answer?"_ in one sentence, it's probably best not to add the event.
 
 ### 2. Prefer `@backstage/ui` components — they already instrument clicks
 
-Components from `@backstage/ui` (BUI) have built-in click instrumentation wired to the Analytics API. As of today this includes at least `Link`, `ButtonLink`, `Tab`, `MenuItem`, `Tag`, and `Table` row clicks — each fires a `click` event with the link text as the subject and the destination `to` as an attribute.
+Components from `@backstage/ui` (BUI) have built-in click instrumentation wired to the Analytics API. As of today this includes at least `Link`, `ButtonLink`, `Tab`, `MenuItem`, `Tag`, and `Table` row clicks. When these components are used for navigation (i.e. rendered with an `href`), a `click` event is fired with the destination included as a `to` attribute. For most of them the `subject` is a best-effort human-readable label — the `aria-label`, the visible text, or the `href` as a fallback. `Table` rows are the exception: their `subject` is the `href` string itself, not derived from visible row content.
 
 Consequences:
 
@@ -136,19 +136,19 @@ Don't wrap every small component in its own context — prefer to set context on
 
 ## Unit testing event capture
 
-Use `MockAnalyticsApi` from `@backstage/frontend-test-utils`. Prefer one thorough test with multiple assertions over many small ones.
+Use `mockApis.analytics()` from `@backstage/frontend-test-utils` — it returns a mock `AnalyticsApi` implementation with a `getEvents()` helper for assertions. Prefer one thorough test with multiple assertions over many small ones.
 
 ```tsx
 import { render, fireEvent, waitFor, screen } from '@testing-library/react';
 import { analyticsApiRef } from '@backstage/frontend-plugin-api';
 import {
-  MockAnalyticsApi,
+  mockApis,
   TestApiProvider,
   wrapInTestApp,
 } from '@backstage/frontend-test-utils';
 
 it('captures a deploy event with the service name', async () => {
-  const analytics = new MockAnalyticsApi();
+  const analytics = mockApis.analytics();
 
   render(
     wrapInTestApp(
