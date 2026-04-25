@@ -18,6 +18,7 @@ import {
   coreServices,
   createBackendModule,
   createExtensionPoint,
+  LoggerService,
 } from '@backstage/backend-plugin-api';
 import { incrementalIngestionProvidersExtensionPoint } from '@backstage/plugin-catalog-backend-module-incremental-ingestion';
 import {
@@ -30,6 +31,7 @@ import {
 import { HumanDuration } from '@backstage/types';
 import {
   MicrosoftGraphIncrementalEntityProvider,
+  MSGraphContext,
   MSGraphCursor,
 } from '../MicrosoftGraphIncrementalEntityProvider';
 
@@ -192,9 +194,9 @@ export const catalogModuleMicrosoftGraphIncrementalEntityProvider =
               ),
             });
 
-            const restLength = deriveRestLength(providerConfig);
+            const restLength = deriveRestLength(providerConfig, logger);
 
-            incremental.addProvider<MSGraphCursor, unknown>({
+            incremental.addProvider<MSGraphCursor, MSGraphContext>({
               provider,
               options: {
                 burstInterval: { seconds: 3 },
@@ -226,10 +228,18 @@ function resolveTransformer<T extends Function>(
 
 function deriveRestLength(
   providerConfig: ReturnType<typeof readProviderConfigs>[number],
+  logger: LoggerService,
 ): HumanDuration {
   const freq = providerConfig.schedule?.frequency;
   if (freq && typeof freq === 'object' && !('cron' in freq)) {
     return freq as HumanDuration;
+  }
+  if (freq) {
+    logger.warn(
+      `MicrosoftGraphIncrementalEntityProvider:${providerConfig.id}: ` +
+        `schedule.frequency is a cron expression; cannot derive restLength from it. ` +
+        `Defaulting restLength to 8 hours.`,
+    );
   }
   return { hours: 8 };
 }

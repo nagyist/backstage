@@ -86,13 +86,13 @@ function withLocations(providerId: string, entity: Entity): Entity {
  *
  * The `nextLink` field holds the `@odata.nextLink` URL returned by the
  * Microsoft Graph API, which encodes all state needed to resume a paged
- * request. A `null` value means the current phase is starting fresh.
+ * request. An absent value means the current phase is starting fresh.
  *
  * @public
  */
 export type MSGraphCursor = {
   phase: 'users' | 'groups';
-  nextLink: string | null;
+  nextLink?: string;
 };
 
 /**
@@ -279,7 +279,7 @@ export class MicrosoftGraphIncrementalEntityProvider
     cursor?: MSGraphCursor,
   ): Promise<EntityIteratorResult<MSGraphCursor>> {
     const phase = cursor?.phase ?? 'users';
-    const nextLink = cursor?.nextLink ?? null;
+    const nextLink = cursor?.nextLink;
 
     if (phase === 'users') {
       return this.readUsersPage(client, provider, nextLink);
@@ -290,7 +290,7 @@ export class MicrosoftGraphIncrementalEntityProvider
   private async readUsersPage(
     client: MicrosoftGraphClient,
     provider: MicrosoftGraphProviderConfig,
-    nextLink: string | null,
+    nextLink: string | undefined,
   ): Promise<EntityIteratorResult<MSGraphCursor>> {
     const { items: rawUsers, nextLink: newNextLink } =
       await requestOnePage<MicrosoftGraph.User>(
@@ -304,7 +304,7 @@ export class MicrosoftGraphIncrementalEntityProvider
             top: PAGE_SIZE,
           },
           queryMode: provider.queryMode,
-          nextLink: nextLink ?? undefined,
+          nextLink,
         },
       );
 
@@ -352,14 +352,14 @@ export class MicrosoftGraphIncrementalEntityProvider
     return {
       done: false,
       entities,
-      cursor: { phase: 'groups', nextLink: null },
+      cursor: { phase: 'groups' },
     };
   }
 
   private async readGroupsPage(
     client: MicrosoftGraphClient,
     provider: MicrosoftGraphProviderConfig,
-    nextLink: string | null,
+    nextLink: string | undefined,
   ): Promise<EntityIteratorResult<MSGraphCursor>> {
     const { items: rawGroups, nextLink: newNextLink } =
       await requestOnePage<MicrosoftGraph.Group>(
@@ -374,7 +374,7 @@ export class MicrosoftGraphIncrementalEntityProvider
             top: PAGE_SIZE,
           },
           queryMode: provider.queryMode,
-          nextLink: nextLink ?? undefined,
+          nextLink,
         },
       );
 
@@ -431,6 +431,12 @@ export class MicrosoftGraphIncrementalEntityProvider
                   userEntity.metadata.name,
                 );
                 userRefs.push(stringifyEntityRef(userEntity));
+              } else {
+                this.options.logger.debug(
+                  `${this.getProviderName()}: group member user ${
+                    member.id
+                  } could not be transformed (sparse object?), skipping`,
+                );
               }
             } else if (member['@odata.type'] === '#microsoft.graph.group') {
               const childEntity = await groupTransformer(
@@ -445,12 +451,12 @@ export class MicrosoftGraphIncrementalEntityProvider
             }
           }
 
-          entity.spec.members = userRefs;
-          entity.spec.children = childRefs;
-
           entities.push({
             locationKey: `msgraph-org-provider:${this.options.id}`,
-            entity: withLocations(this.options.id, entity),
+            entity: withLocations(this.options.id, {
+              ...entity,
+              spec: { ...entity.spec, members: userRefs, children: childRefs },
+            }),
           });
         }),
       ),

@@ -320,7 +320,7 @@ describe('MicrosoftGraphIncrementalEntityProvider', () => {
 
       expect(result.done).toBe(false);
       expect((result.cursor as MSGraphCursor).phase).toBe('groups');
-      expect((result.cursor as MSGraphCursor).nextLink).toBeNull();
+      expect((result.cursor as MSGraphCursor).nextLink).toBeUndefined();
     });
 
     it('skips users where the transformer returns undefined', async () => {
@@ -450,7 +450,7 @@ describe('MicrosoftGraphIncrementalEntityProvider', () => {
   });
 
   describe('next — groups phase', () => {
-    const groupsCursor: MSGraphCursor = { phase: 'groups', nextLink: null };
+    const groupsCursor: MSGraphCursor = { phase: 'groups' };
 
     it('emits the tenant root group on the first groups page', async () => {
       (mockClient.getOrganization as jest.Mock).mockResolvedValue({

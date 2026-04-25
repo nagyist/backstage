@@ -44,24 +44,33 @@ export async function requestOnePage<T>(
 
   // Microsoft Graph requires $count=true whenever ConsistencyLevel: eventual is set,
   // including plain listing requests with no $filter or $search.
-  if (appliedQueryMode === 'advanced' && query) {
-    query.count = true;
-  }
+  const finalQuery =
+    appliedQueryMode === 'advanced' && query
+      ? { ...query, count: true }
+      : query;
 
   const headers: Record<string, string> =
     appliedQueryMode === 'advanced' ? { ConsistencyLevel: 'eventual' } : {};
 
   const response = nextLink
     ? await client.requestRaw(nextLink, headers, 2, signal)
-    : await client.requestApi(path, query, headers, signal);
+    : await client.requestApi(path, finalQuery, headers, signal);
 
   if (response.status !== 200) {
-    const body = await response.json();
-    const err = body?.error;
+    let message = `HTTP ${response.status}`;
+    try {
+      const body = await response.json();
+      const err = body?.error;
+      if (err?.code || err?.message) {
+        message = `${err.code} - ${err.message}`;
+      }
+    } catch {
+      // Response body is not JSON; fall back to HTTP status above
+    }
     throw new Error(
-      `Error while reading ${nextLink ?? path} from Microsoft Graph: ${
-        err?.code
-      } - ${err?.message}`,
+      `Error while reading ${
+        nextLink ?? path
+      } from Microsoft Graph: ${message}`,
     );
   }
 
