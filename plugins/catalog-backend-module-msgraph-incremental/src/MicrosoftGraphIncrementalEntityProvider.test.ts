@@ -262,9 +262,9 @@ describe('MicrosoftGraphIncrementalEntityProvider', () => {
       const result = await provider.next(makeContext());
 
       expect(result.done).toBe(false);
-      expect(result.entities).toHaveLength(1);
+      expect(result.entities!).toHaveLength(1);
 
-      const entity = result.entities[0].entity;
+      const entity = result.entities![0].entity;
       expect(entity.kind).toBe('User');
       expect(
         entity.metadata.annotations?.[MICROSOFT_GRAPH_USER_ID_ANNOTATION],
@@ -275,7 +275,7 @@ describe('MicrosoftGraphIncrementalEntityProvider', () => {
       expect(entity.metadata.annotations?.[ANNOTATION_ORIGIN_LOCATION]).toBe(
         'msgraph:default/user-id-1',
       );
-      expect(result.entities[0].locationKey).toBe(
+      expect(result.entities![0].locationKey).toBe(
         'msgraph-org-provider:default',
       );
     });
@@ -339,11 +339,11 @@ describe('MicrosoftGraphIncrementalEntityProvider', () => {
 
       const result = await provider.next(makeContext());
 
-      expect(result.entities).toHaveLength(0);
+      expect(result.entities!).toHaveLength(0);
     });
 
     it('truncates entity names longer than 63 characters', async () => {
-      const longUPN = 'a'.repeat(64) + '@example.com';
+      const longUPN = `${'a'.repeat(64)}@example.com`;
       mockRequestOnePage.mockResolvedValueOnce({
         items: [{ id: 'u1', displayName: 'Test', userPrincipalName: longUPN }],
         nextLink: undefined,
@@ -360,7 +360,7 @@ describe('MicrosoftGraphIncrementalEntityProvider', () => {
 
       // Entity may be emitted or skipped depending on transformer handling of the UPN;
       // what matters is that no name exceeds 63 characters.
-      for (const { entity } of result.entities) {
+      for (const { entity } of result.entities!) {
         expect(entity.metadata.name.length).toBeLessThanOrEqual(63);
       }
     });
@@ -445,7 +445,7 @@ describe('MicrosoftGraphIncrementalEntityProvider', () => {
       const result = await provider.next(makeContext());
 
       // Both users should still be emitted despite the photo failure
-      expect(result.entities).toHaveLength(2);
+      expect(result.entities!).toHaveLength(2);
     });
   });
 
@@ -471,14 +471,8 @@ describe('MicrosoftGraphIncrementalEntityProvider', () => {
 
       const result = await provider.next(makeContext(), groupsCursor);
 
-      const rootGroup = result.entities.find(
-        e =>
-          e.entity.metadata.annotations?.[
-            MICROSOFT_GRAPH_GROUP_ID_ANNOTATION
-          ] === undefined && e.entity.spec?.type === 'root',
-      );
       // Root group is emitted (org entity kind=Group, type=root)
-      expect(result.entities.some(e => e.entity.spec?.type === 'root')).toBe(
+      expect(result.entities!.some(e => e.entity.spec?.type === 'root')).toBe(
         true,
       );
     });
@@ -526,7 +520,7 @@ describe('MicrosoftGraphIncrementalEntityProvider', () => {
 
       const result = await provider.next(makeContext(), groupsCursor);
 
-      const groupEntity = result.entities.find(
+      const groupEntity = result.entities!.find(
         e =>
           e.entity.metadata.annotations?.[
             MICROSOFT_GRAPH_GROUP_ID_ANNOTATION
@@ -578,7 +572,7 @@ describe('MicrosoftGraphIncrementalEntityProvider', () => {
 
       const result = await provider.next(makeContext(), groupsCursor);
 
-      const groupEntity = result.entities.find(
+      const groupEntity = result.entities!.find(
         e =>
           e.entity.metadata.annotations?.[
             MICROSOFT_GRAPH_GROUP_ID_ANNOTATION
@@ -622,7 +616,7 @@ describe('MicrosoftGraphIncrementalEntityProvider', () => {
 
       const result = await provider.next(makeContext(), groupsCursor);
 
-      const parentEntity = result.entities.find(
+      const parentEntity = result.entities!.find(
         e =>
           e.entity.metadata.annotations?.[
             MICROSOFT_GRAPH_GROUP_ID_ANNOTATION
@@ -702,7 +696,7 @@ describe('MicrosoftGraphIncrementalEntityProvider', () => {
       );
       // The group itself is still emitted
       expect(
-        result.entities.some(
+        result.entities!.some(
           e =>
             e.entity.metadata.annotations?.[
               MICROSOFT_GRAPH_GROUP_ID_ANNOTATION
@@ -732,7 +726,7 @@ describe('MicrosoftGraphIncrementalEntityProvider', () => {
       const result = await provider.next(makeContext(), groupsCursor);
 
       // Only the root group entity remains
-      expect(result.entities.every(e => e.entity.spec?.type === 'root')).toBe(
+      expect(result.entities!.every(e => e.entity.spec?.type === 'root')).toBe(
         true,
       );
     });

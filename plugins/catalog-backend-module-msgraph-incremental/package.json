@@ -61,6 +61,7 @@
     "p-limit": "^3.0.2"
   },
   "devDependencies": {
+    "@backstage/backend-test-utils": "workspace:^",
     "@backstage/cli": "workspace:^"
   }
 }
