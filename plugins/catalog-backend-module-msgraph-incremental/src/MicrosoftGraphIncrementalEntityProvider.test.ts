@@ -728,6 +728,70 @@ describe('MicrosoftGraphIncrementalEntityProvider', () => {
       expect(parentEntity!.entity.spec?.children).toHaveLength(0);
     });
 
+    it('logs a warning and skips a child group member when the transformer throws', async () => {
+      const throwingGroupTransformer = jest
+        .fn()
+        .mockResolvedValueOnce({
+          // first call: parent group transform succeeds
+          apiVersion: 'backstage.io/v1alpha1',
+          kind: 'Group',
+          metadata: {
+            name: 'parent-group',
+            annotations: { 'graph.microsoft.com/group-id': 'grp-parent' },
+          },
+          spec: { type: 'team', children: [], members: [] },
+        })
+        .mockRejectedValueOnce(new Error('Transformer error'));
+
+      (mockClient.getOrganization as jest.Mock).mockResolvedValue({
+        id: 'org-id',
+        displayName: 'My Org',
+      });
+      mockRequestOnePage.mockResolvedValueOnce({
+        items: [
+          {
+            id: 'grp-parent',
+            displayName: 'Parent',
+            mail: 'parent@example.com',
+          },
+        ],
+        nextLink: undefined,
+      });
+      (mockClient.getGroupMembers as jest.Mock).mockReturnValue(
+        asyncYield({
+          '@odata.type': '#microsoft.graph.group',
+          id: 'grp-child',
+          displayName: 'Child Group',
+          mail: 'child@example.com',
+        }),
+      );
+
+      const provider = new MicrosoftGraphIncrementalEntityProvider({
+        id: 'default',
+        provider: baseProviderConfig as any,
+        logger,
+        groupTransformer: throwingGroupTransformer,
+      });
+
+      const result = await provider.next(makeContext(), groupsCursor);
+
+      // Parent group still emitted despite child transformer throwing
+      const parentEntity = result.entities!.find(
+        e =>
+          e.entity.metadata.annotations?.[
+            MICROSOFT_GRAPH_GROUP_ID_ANNOTATION
+          ] === 'grp-parent',
+      );
+      expect(parentEntity).toBeDefined();
+      expect(parentEntity!.entity.spec?.children).toHaveLength(0);
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.stringContaining(
+          'group member child group grp-child failed to transform, skipping',
+        ),
+        expect.anything(),
+      );
+    });
+
     it('returns done:false with groups cursor when nextLink is present', async () => {
       const nextLink =
         'https://graph.microsoft.com/v1.0/groups?$skiptoken=page2';

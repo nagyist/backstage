@@ -481,14 +481,29 @@ export class MicrosoftGraphIncrementalEntityProvider
               // With a filter, child groups may not be ingested themselves,
               // which would produce dangling spec.children references.
               if (!provider.groupFilter && !provider.groupSearch) {
-                const childEntity = await groupTransformer(
-                  member as MicrosoftGraph.Group,
-                );
-                if (childEntity) {
-                  childEntity.metadata.name = capEntityName(
-                    childEntity.metadata.name,
+                try {
+                  const childEntity = await groupTransformer(
+                    member as MicrosoftGraph.Group,
                   );
-                  childRefs.push(stringifyEntityRef(childEntity));
+                  if (childEntity) {
+                    childEntity.metadata.name = capEntityName(
+                      childEntity.metadata.name,
+                    );
+                    childRefs.push(stringifyEntityRef(childEntity));
+                  } else {
+                    this.options.logger.debug(
+                      `${this.getProviderName()}: group member child group ${
+                        member.id
+                      } could not be transformed (sparse object?), skipping`,
+                    );
+                  }
+                } catch (e) {
+                  this.options.logger.warn(
+                    `${this.getProviderName()}: group member child group ${
+                      member.id
+                    } failed to transform, skipping`,
+                    { error: e },
+                  );
                 }
               }
             }
