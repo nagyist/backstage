@@ -91,7 +91,7 @@ export type MSGraphContext = {
 // @public
 export type MSGraphCursor = {
   phase: 'users' | 'groups';
-  nextLink: string | null;
+  nextLink?: string;
 };
 
 // (No @packageDocumentation comment for this package)
