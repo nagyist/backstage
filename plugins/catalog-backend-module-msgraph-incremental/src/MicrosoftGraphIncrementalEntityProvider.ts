@@ -153,8 +153,8 @@ export interface MicrosoftGraphIncrementalEntityProviderOptions {
  * at a time, and provides them as User and Group entities for the catalog.
  *
  * Unlike `MicrosoftGraphOrgEntityProvider`, this provider never holds the full
- * dataset in memory at once. Each burst processes a single page of users or
- * groups (up to 999 items). This makes it suitable for very large tenants and
+ * dataset in memory at once. Each burst processes a single page (up to 999
+ * users or 100 groups). This makes it suitable for very large tenants and
  * avoids the memory pressure and long-running task issues of the full-scan
  * provider.
  *
@@ -166,9 +166,11 @@ export interface MicrosoftGraphIncrementalEntityProviderOptions {
  * stitching derives `spec.memberOf` on users from these group membership lists.
  *
  * @remarks
- * `userGroupMemberFilter`, `userGroupMemberSearch`, and `userGroupMemberPath`
- * are not supported. Use `userFilter` / `userPath` to restrict which users are
- * ingested, and `groupFilter` / `groupSearch` to restrict which groups.
+ * `userGroupMemberFilter`, `userGroupMemberSearch`, `userGroupMemberPath`, and
+ * `groupIncludeSubGroups` are not supported. Use `userFilter` / `userPath` to
+ * restrict which users are ingested, and `groupFilter` / `groupSearch` to
+ * restrict which groups. Switch to `MicrosoftGraphOrgEntityProvider` if you
+ * require any of these options.
  *
  * @public
  */

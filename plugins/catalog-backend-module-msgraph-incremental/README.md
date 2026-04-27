@@ -9,8 +9,8 @@ AD tenants where holding the full dataset in memory at once is not practical.
 - **Cursor-based resumption** — the `@odata.nextLink` URL is persisted as the
   cursor, so a pod restart during ingestion resumes from the last completed page
   rather than starting over.
-- **Memory-efficient** — each burst processes a single page (up to 999 items),
-  keeping memory usage flat regardless of tenant size.
+- **Memory-efficient** — each burst processes a single page (up to 999 users
+  or 100 groups), keeping memory usage flat regardless of tenant size.
 - **Photo support** — user profile photos are fetched with a gated pre-check to
   avoid unnecessary API calls for users without photos.
 - **Transformer extension point** — user, group, organization, and provider
@@ -70,4 +70,5 @@ catalog:
 | Memory usage               | Full dataset in RAM               | One page at a time  |
 | Resume on restart          | Starts from scratch               | Resumes from cursor |
 | `userGroupMember*` options | Supported                         | Not supported       |
+| `groupIncludeSubGroups`    | Supported                         | Not supported       |
 | Suitable for large tenants | No                                | Yes                 |
