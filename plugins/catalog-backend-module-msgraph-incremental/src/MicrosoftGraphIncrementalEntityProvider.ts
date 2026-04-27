@@ -274,6 +274,14 @@ export class MicrosoftGraphIncrementalEntityProvider
       );
     }
 
+    if (provider.groupIncludeSubGroups) {
+      this.options.logger.warn(
+        `${this.getProviderName()}: groupIncludeSubGroups is not supported by ` +
+          `MicrosoftGraphIncrementalEntityProvider and will be ignored. ` +
+          `Switch to MicrosoftGraphOrgEntityProvider if you require this option.`,
+      );
+    }
+
     const client = MicrosoftGraphClient.create(provider);
     await burst({ client, provider });
   }
@@ -321,9 +329,9 @@ export class MicrosoftGraphIncrementalEntityProvider
       rawUsers.map(user =>
         limiter(async () => {
           let userPhoto: string | undefined;
-          if (provider.loadUserPhotos !== false) {
+          if (user.id && provider.loadUserPhotos !== false) {
             try {
-              userPhoto = await getUserPhotoGated(client, user.id!, 120);
+              userPhoto = await getUserPhotoGated(client, user.id, 120);
             } catch (e) {
               this.options.logger.debug(
                 `${this.getProviderName()}: failed to load photo for user ${
@@ -469,14 +477,19 @@ export class MicrosoftGraphIncrementalEntityProvider
                 );
               }
             } else if (member['@odata.type'] === '#microsoft.graph.group') {
-              const childEntity = await groupTransformer(
-                member as MicrosoftGraph.Group,
-              );
-              if (childEntity) {
-                childEntity.metadata.name = capEntityName(
-                  childEntity.metadata.name,
+              // Only emit child refs when no group filter/search is active.
+              // With a filter, child groups may not be ingested themselves,
+              // which would produce dangling spec.children references.
+              if (!provider.groupFilter && !provider.groupSearch) {
+                const childEntity = await groupTransformer(
+                  member as MicrosoftGraph.Group,
                 );
-                childRefs.push(stringifyEntityRef(childEntity));
+                if (childEntity) {
+                  childEntity.metadata.name = capEntityName(
+                    childEntity.metadata.name,
+                  );
+                  childRefs.push(stringifyEntityRef(childEntity));
+                }
               }
             }
           }

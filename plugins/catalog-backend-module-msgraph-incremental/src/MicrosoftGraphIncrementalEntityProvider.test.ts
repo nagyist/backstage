@@ -205,6 +205,25 @@ describe('MicrosoftGraphIncrementalEntityProvider', () => {
         ),
       );
     });
+
+    it('warns when groupIncludeSubGroups is set', async () => {
+      const provider = new MicrosoftGraphIncrementalEntityProvider({
+        id: 'default',
+        provider: {
+          ...baseProviderConfig,
+          groupIncludeSubGroups: true,
+        } as any,
+        logger,
+      });
+
+      await provider.around(async () => {});
+
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.stringContaining(
+          'groupIncludeSubGroups is not supported',
+        ),
+      );
+    });
   });
 
   describe('next — users phase', () => {
@@ -414,6 +433,29 @@ describe('MicrosoftGraphIncrementalEntityProvider', () => {
       await provider.next(makeContext());
 
       expect(mockGetUserPhotoGated).toHaveBeenCalledWith(mockClient, 'u1', 120);
+    });
+
+    it('skips photo fetch when user has no id to avoid requesting users/undefined/photo', async () => {
+      mockRequestOnePage.mockResolvedValueOnce({
+        items: [
+          {
+            // No id field — Graph can theoretically omit it
+            displayName: 'No-ID User',
+            userPrincipalName: 'noid@example.com',
+          },
+        ],
+        nextLink: undefined,
+      });
+
+      const provider = new MicrosoftGraphIncrementalEntityProvider({
+        id: 'default',
+        provider: baseProviderConfig as any,
+        logger,
+      });
+
+      await provider.next(makeContext());
+
+      expect(mockGetUserPhotoGated).not.toHaveBeenCalled();
     });
 
     it('continues processing remaining users when a photo load fails and logs the error', async () => {
@@ -638,6 +680,50 @@ describe('MicrosoftGraphIncrementalEntityProvider', () => {
           ] === 'grp-parent',
       );
       expect(parentEntity!.entity.spec?.children).toHaveLength(1);
+    });
+
+    it('omits child group refs when groupFilter is active to avoid dangling references', async () => {
+      const providerWithFilter = {
+        ...baseProviderConfig,
+        groupFilter: 'securityEnabled eq true',
+      };
+      (mockClient.getOrganization as jest.Mock).mockResolvedValue({
+        id: 'org-id',
+        displayName: 'My Org',
+      });
+      mockRequestOnePage.mockResolvedValueOnce({
+        items: [
+          { id: 'grp-parent', displayName: 'Parent', mail: 'parent@example.com' },
+        ],
+        nextLink: undefined,
+      });
+      (mockClient.getGroupMembers as jest.Mock).mockReturnValue(
+        asyncYield({
+          '@odata.type': '#microsoft.graph.group',
+          id: 'grp-child',
+          displayName: 'Child Group',
+          mail: 'child@example.com',
+        }),
+      );
+
+      const provider = new MicrosoftGraphIncrementalEntityProvider({
+        id: 'default',
+        provider: providerWithFilter as any,
+        logger,
+      });
+
+      const result = await provider.next(
+        { client: mockClient, provider: providerWithFilter as any },
+        groupsCursor,
+      );
+
+      const parentEntity = result.entities!.find(
+        e =>
+          e.entity.metadata.annotations?.[
+            MICROSOFT_GRAPH_GROUP_ID_ANNOTATION
+          ] === 'grp-parent',
+      );
+      expect(parentEntity!.entity.spec?.children).toHaveLength(0);
     });
 
     it('returns done:false with groups cursor when nextLink is present', async () => {
