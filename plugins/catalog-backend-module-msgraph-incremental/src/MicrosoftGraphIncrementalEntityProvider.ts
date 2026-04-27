@@ -429,6 +429,17 @@ export class MicrosoftGraphIncrementalEntityProvider
 
           for await (const member of client.getGroupMembers(group.id!, {
             top: GROUP_PAGE_SIZE,
+            // Request the minimum fields needed by defaultUserTransformer and
+            // defaultGroupTransformer so member objects are never sparse.
+            select: [
+              'id',
+              'displayName',
+              'mail',
+              'mailNickname',
+              'userPrincipalName',
+              'description',
+              'securityEnabled',
+            ],
           })) {
             if (member['@odata.type'] === '#microsoft.graph.user') {
               try {

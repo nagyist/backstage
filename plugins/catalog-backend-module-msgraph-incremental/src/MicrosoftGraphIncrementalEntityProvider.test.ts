@@ -586,6 +586,17 @@ describe('MicrosoftGraphIncrementalEntityProvider', () => {
       expect(groupEntity!.entity.spec?.members).toContain(
         'user:default/alice_example.com',
       );
+      // Verify $select is passed so member objects are never sparse
+      expect(mockClient.getGroupMembers).toHaveBeenCalledWith(
+        'grp-1',
+        expect.objectContaining({
+          select: expect.arrayContaining([
+            'id',
+            'displayName',
+            'userPrincipalName',
+          ]),
+        }),
+      );
     });
 
     it('populates spec.children with nested group refs from getGroupMembers', async () => {
