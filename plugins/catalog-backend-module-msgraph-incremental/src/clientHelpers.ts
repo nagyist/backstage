@@ -45,9 +45,7 @@ export async function requestOnePage<T>(
   // Microsoft Graph requires $count=true whenever ConsistencyLevel: eventual is set,
   // including plain listing requests with no $filter or $search.
   const finalQuery =
-    appliedQueryMode === 'advanced' && query
-      ? { ...query, count: true }
-      : query;
+    appliedQueryMode === 'advanced' ? { ...(query ?? {}), count: true } : query;
 
   const headers: Record<string, string> =
     appliedQueryMode === 'advanced' ? { ConsistencyLevel: 'eventual' } : {};

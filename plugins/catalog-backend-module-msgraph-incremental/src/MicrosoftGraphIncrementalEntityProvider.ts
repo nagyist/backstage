@@ -47,7 +47,10 @@ import {
 import { LoggerService } from '@backstage/backend-plugin-api';
 import { getUserPhotoGated, requestOnePage } from './clientHelpers';
 
-const PAGE_SIZE = 999;
+const USER_PAGE_SIZE = 999;
+// Groups phase fetches members for every group on the page, so a smaller page
+// size keeps each burst within its time budget.
+const GROUP_PAGE_SIZE = 100;
 
 /**
  * Backstage entity names must be ≤63 chars ([a-zA-Z0-9] separated by [-_.]).
@@ -301,7 +304,7 @@ export class MicrosoftGraphIncrementalEntityProvider
             filter: provider.userFilter,
             expand: provider.userExpand,
             select: provider.userSelect,
-            top: PAGE_SIZE,
+            top: USER_PAGE_SIZE,
           },
           queryMode: provider.queryMode,
           nextLink,
@@ -376,7 +379,7 @@ export class MicrosoftGraphIncrementalEntityProvider
             search: provider.groupSearch,
             expand: provider.groupExpand,
             select: provider.groupSelect,
-            top: PAGE_SIZE,
+            top: GROUP_PAGE_SIZE,
           },
           queryMode: provider.queryMode,
           nextLink,
@@ -425,22 +428,31 @@ export class MicrosoftGraphIncrementalEntityProvider
           const childRefs: string[] = [];
 
           for await (const member of client.getGroupMembers(group.id!, {
-            top: PAGE_SIZE,
+            top: GROUP_PAGE_SIZE,
           })) {
             if (member['@odata.type'] === '#microsoft.graph.user') {
-              const userEntity = await userTransformer(
-                member as MicrosoftGraph.User,
-              );
-              if (userEntity) {
-                userEntity.metadata.name = capEntityName(
-                  userEntity.metadata.name,
+              try {
+                const userEntity = await userTransformer(
+                  member as MicrosoftGraph.User,
                 );
-                userRefs.push(stringifyEntityRef(userEntity));
-              } else {
-                this.options.logger.debug(
+                if (userEntity) {
+                  userEntity.metadata.name = capEntityName(
+                    userEntity.metadata.name,
+                  );
+                  userRefs.push(stringifyEntityRef(userEntity));
+                } else {
+                  this.options.logger.debug(
+                    `${this.getProviderName()}: group member user ${
+                      member.id
+                    } could not be transformed (sparse object?), skipping`,
+                  );
+                }
+              } catch (e) {
+                this.options.logger.warn(
                   `${this.getProviderName()}: group member user ${
                     member.id
-                  } could not be transformed (sparse object?), skipping`,
+                  } failed to transform, skipping`,
+                  { error: e },
                 );
               }
             } else if (member['@odata.type'] === '#microsoft.graph.group') {

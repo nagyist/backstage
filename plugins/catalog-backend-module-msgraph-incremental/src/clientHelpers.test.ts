@@ -110,6 +110,21 @@ describe('requestOnePage', () => {
     );
   });
 
+  it('sends $count=true in advanced mode even when no query is provided', async () => {
+    (client.requestApi as jest.Mock).mockResolvedValue(
+      makeResponse(200, { value: [] }),
+    );
+
+    await requestOnePage(client, 'users', { queryMode: 'advanced' });
+
+    expect(client.requestApi).toHaveBeenCalledWith(
+      'users',
+      expect.objectContaining({ count: true }),
+      { ConsistencyLevel: 'eventual' },
+      undefined,
+    );
+  });
+
   it('does not set $count for basic mode', async () => {
     (client.requestApi as jest.Mock).mockResolvedValue(
       makeResponse(200, { value: [] }),

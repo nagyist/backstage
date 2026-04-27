@@ -231,7 +231,7 @@ describe('MicrosoftGraphIncrementalEntityProvider', () => {
         mockClient,
         'users',
         expect.objectContaining({
-          query: expect.objectContaining({ top: 999 }),
+          query: expect.objectContaining({ top: 999 }), // USER_PAGE_SIZE
         }),
       );
       // No users → advances straight to groups phase
@@ -733,6 +733,62 @@ describe('MicrosoftGraphIncrementalEntityProvider', () => {
       expect(result.entities!.every(e => e.entity.spec?.type === 'root')).toBe(
         true,
       );
+    });
+
+    it('logs a warning and skips a group member when the transformer throws', async () => {
+      (mockClient.getOrganization as jest.Mock).mockResolvedValue({
+        id: 'org-id',
+        displayName: 'My Org',
+      });
+      mockRequestOnePage.mockResolvedValueOnce({
+        items: [
+          { id: 'grp-1', displayName: 'Engineering', mail: 'eng@example.com' },
+        ],
+        nextLink: undefined,
+      });
+      (mockClient.getGroupMembers as jest.Mock).mockReturnValue(
+        asyncYield(
+          {
+            '@odata.type': '#microsoft.graph.user',
+            id: 'u-bad',
+            // sparse — no userPrincipalName, transformer will throw
+          },
+          {
+            '@odata.type': '#microsoft.graph.user',
+            id: 'u-good',
+            displayName: 'Alice',
+            userPrincipalName: 'alice@example.com',
+          },
+        ),
+      );
+
+      const provider = new MicrosoftGraphIncrementalEntityProvider({
+        id: 'default',
+        provider: baseProviderConfig as any,
+        logger,
+        userTransformer: async user => {
+          if (!user.userPrincipalName) throw new Error('Missing UPN');
+          const { defaultUserTransformer } = await import(
+            '@backstage/plugin-catalog-backend-module-msgraph'
+          );
+          return defaultUserTransformer(user);
+        },
+      });
+
+      const result = await provider.next(makeContext(), groupsCursor);
+
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.stringContaining('group member user u-bad failed to transform'),
+        expect.anything(),
+      );
+      const groupEntity = result.entities!.find(
+        e =>
+          e.entity.metadata.annotations?.[
+            MICROSOFT_GRAPH_GROUP_ID_ANNOTATION
+          ] === 'grp-1',
+      );
+      // Only the good member should appear
+      expect(groupEntity!.entity.spec?.members).toHaveLength(1);
     });
 
     it('merges transformer-pre-populated members with fetched membership', async () => {
