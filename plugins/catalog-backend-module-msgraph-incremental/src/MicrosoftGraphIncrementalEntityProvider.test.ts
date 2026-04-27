@@ -219,9 +219,7 @@ describe('MicrosoftGraphIncrementalEntityProvider', () => {
       await provider.around(async () => {});
 
       expect(logger.warn).toHaveBeenCalledWith(
-        expect.stringContaining(
-          'groupIncludeSubGroups is not supported',
-        ),
+        expect.stringContaining('groupIncludeSubGroups is not supported'),
       );
     });
   });
@@ -693,7 +691,11 @@ describe('MicrosoftGraphIncrementalEntityProvider', () => {
       });
       mockRequestOnePage.mockResolvedValueOnce({
         items: [
-          { id: 'grp-parent', displayName: 'Parent', mail: 'parent@example.com' },
+          {
+            id: 'grp-parent',
+            displayName: 'Parent',
+            mail: 'parent@example.com',
+          },
         ],
         nextLink: undefined,
       });
