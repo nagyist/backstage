@@ -416,7 +416,7 @@ describe('MicrosoftGraphIncrementalEntityProvider', () => {
       expect(mockGetUserPhotoGated).toHaveBeenCalledWith(mockClient, 'u1', 120);
     });
 
-    it('continues processing remaining users when a photo load fails', async () => {
+    it('continues processing remaining users when a photo load fails and logs the error', async () => {
       mockRequestOnePage.mockResolvedValueOnce({
         items: [
           {
@@ -446,6 +446,10 @@ describe('MicrosoftGraphIncrementalEntityProvider', () => {
 
       // Both users should still be emitted despite the photo failure
       expect(result.entities!).toHaveLength(2);
+      expect(logger.debug).toHaveBeenCalledWith(
+        expect.stringContaining('failed to load photo for user u1'),
+        expect.anything(),
+      );
     });
   });
 
@@ -728,6 +732,58 @@ describe('MicrosoftGraphIncrementalEntityProvider', () => {
       // Only the root group entity remains
       expect(result.entities!.every(e => e.entity.spec?.type === 'root')).toBe(
         true,
+      );
+    });
+
+    it('merges transformer-pre-populated members with fetched membership', async () => {
+      (mockClient.getOrganization as jest.Mock).mockResolvedValue({
+        id: 'org-id',
+        displayName: 'My Org',
+      });
+      mockRequestOnePage.mockResolvedValueOnce({
+        items: [
+          { id: 'grp-1', displayName: 'Engineering', mail: 'eng@example.com' },
+        ],
+        nextLink: undefined,
+      });
+      (mockClient.getGroupMembers as jest.Mock).mockReturnValue(
+        asyncYield({
+          '@odata.type': '#microsoft.graph.user',
+          id: 'u2',
+          displayName: 'Bob',
+          userPrincipalName: 'bob@example.com',
+        }),
+      );
+
+      const provider = new MicrosoftGraphIncrementalEntityProvider({
+        id: 'default',
+        provider: baseProviderConfig as any,
+        logger,
+        groupTransformer: async group => {
+          const base = await import(
+            '@backstage/plugin-catalog-backend-module-msgraph'
+          ).then(m => m.defaultGroupTransformer(group));
+          if (!base) return undefined;
+          // Transformer pre-populates an extra member
+          base.spec = { ...base.spec, members: ['user:default/extra-user'] };
+          return base;
+        },
+      });
+
+      const result = await provider.next(makeContext(), groupsCursor);
+
+      const groupEntity = result.entities!.find(
+        e =>
+          e.entity.metadata.annotations?.[
+            MICROSOFT_GRAPH_GROUP_ID_ANNOTATION
+          ] === 'grp-1',
+      );
+      // Should contain both the transformer-set member and the fetched one
+      expect(groupEntity!.entity.spec?.members).toContain(
+        'user:default/extra-user',
+      );
+      expect(groupEntity!.entity.spec?.members).toContain(
+        'user:default/bob_example.com',
       );
     });
 

@@ -319,8 +319,13 @@ export class MicrosoftGraphIncrementalEntityProvider
           if (provider.loadUserPhotos !== false) {
             try {
               userPhoto = await getUserPhotoGated(client, user.id!, 120);
-            } catch {
-              // Photo load failures are non-fatal
+            } catch (e) {
+              this.options.logger.debug(
+                `${this.getProviderName()}: failed to load photo for user ${
+                  user.id
+                }`,
+                { error: e },
+              );
             }
           }
 
@@ -451,11 +456,24 @@ export class MicrosoftGraphIncrementalEntityProvider
             }
           }
 
+          // Merge fetched membership with any members/children the transformer
+          // may have pre-populated, so custom transformers can augment the list.
+          const existingMembers = Array.isArray(entity.spec?.members)
+            ? (entity.spec.members as string[])
+            : [];
+          const existingChildren = Array.isArray(entity.spec?.children)
+            ? (entity.spec.children as string[])
+            : [];
+
           entities.push({
             locationKey: `msgraph-org-provider:${this.options.id}`,
             entity: withLocations(this.options.id, {
               ...entity,
-              spec: { ...entity.spec, members: userRefs, children: childRefs },
+              spec: {
+                ...entity.spec,
+                members: [...new Set([...existingMembers, ...userRefs])],
+                children: [...new Set([...existingChildren, ...childRefs])],
+              },
             }),
           });
         }),

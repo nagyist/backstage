@@ -231,13 +231,20 @@ function deriveRestLength(
   logger: LoggerService,
 ): HumanDuration {
   const freq = providerConfig.schedule?.frequency;
-  if (freq && typeof freq === 'object' && !('cron' in freq)) {
+  // Only treat plain duration objects as restLength — exclude cron expressions
+  // and any other non-duration schedule types (e.g. manual triggers).
+  if (
+    freq &&
+    typeof freq === 'object' &&
+    !('cron' in freq) &&
+    !('trigger' in freq)
+  ) {
     return freq as HumanDuration;
   }
   if (freq) {
     logger.warn(
       `MicrosoftGraphIncrementalEntityProvider:${providerConfig.id}: ` +
-        `schedule.frequency is a cron expression; cannot derive restLength from it. ` +
+        `schedule.frequency is not a duration-based schedule; cannot derive restLength from it. ` +
         `Defaulting restLength to 8 hours.`,
     );
   }

@@ -85,6 +85,9 @@ export async function requestOnePage<T>(
  * Like `getUserPhotoWithSizeLimit` but skips the size-listing call for users
  * with no photo. For users without a photo: 1 fast check call. For users with
  * a photo: 1 check + the normal size-limited fetch (2 more calls).
+ *
+ * Returns `undefined` only for 404 (no photo assigned). Throws for any other
+ * non-200 status so callers can distinguish "no photo" from real errors.
  */
 export async function getUserPhotoGated(
   client: MicrosoftGraphClient,
@@ -92,6 +95,11 @@ export async function getUserPhotoGated(
   maxSize: number,
 ): Promise<string | undefined> {
   const check = await client.requestApi(`users/${userId}/photo`);
-  if (check.status !== 200) return undefined;
+  if (check.status === 404) return undefined;
+  if (check.status !== 200) {
+    throw new Error(
+      `Unexpected status ${check.status} when checking photo for user ${userId}`,
+    );
+  }
   return await client.getUserPhotoWithSizeLimit(userId, maxSize);
 }

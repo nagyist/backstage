@@ -225,7 +225,7 @@ describe('getUserPhotoGated', () => {
 
   afterEach(() => jest.resetAllMocks());
 
-  it('returns undefined when the photo check returns non-200', async () => {
+  it('returns undefined when the photo check returns 404', async () => {
     (client.requestApi as jest.Mock).mockResolvedValue({
       status: 404,
     } as Response);
@@ -233,6 +233,17 @@ describe('getUserPhotoGated', () => {
     const result = await getUserPhotoGated(client, 'user-id', 120);
 
     expect(result).toBeUndefined();
+    expect(client.getUserPhotoWithSizeLimit).not.toHaveBeenCalled();
+  });
+
+  it('throws for non-404 error responses so callers can distinguish real errors', async () => {
+    (client.requestApi as jest.Mock).mockResolvedValue({
+      status: 403,
+    } as Response);
+
+    await expect(getUserPhotoGated(client, 'user-id', 120)).rejects.toThrow(
+      'Unexpected status 403 when checking photo for user user-id',
+    );
     expect(client.getUserPhotoWithSizeLimit).not.toHaveBeenCalled();
   });
 
