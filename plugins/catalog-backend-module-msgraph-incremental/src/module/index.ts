@@ -15,7 +15,6 @@
  */
 
 export {
-  catalogModuleMicrosoftGraphIncrementalEntityProvider as default,
   catalogModuleMicrosoftGraphIncrementalEntityProvider,
   microsoftGraphIncrementalEntityProviderTransformExtensionPoint,
   type MicrosoftGraphIncrementalEntityProviderTransformsExtensionPoint,
