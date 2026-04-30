@@ -397,11 +397,16 @@ export const patchIndexPreBuild = async ({
     path.join(inputDir, 'readme.md'),
   ];
 
+  if (!isChildPath(inputDir, docsPath)) {
+    throw new NotAllowedError(
+      `Target path ${docsPath} is not allowed to refer to a location outside ${inputDir}`,
+    );
+  }
   await fs.ensureDir(docsPath);
   for (const filePath of fallbacks) {
     if (!isChildPath(inputDir, filePath)) {
       throw new NotAllowedError(
-        `Path ${filePath} is not allowed to refer to a location outside ${inputDir}`,
+        `Source path ${filePath} is not allowed to refer to a location outside ${inputDir}`,
       );
     }
     try {

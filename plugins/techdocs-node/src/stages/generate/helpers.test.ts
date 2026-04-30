@@ -581,11 +581,13 @@ describe('helpers', () => {
 
         await expect(
           patchIndexPreBuild({ inputDir: mockDir.path, logger: mockLogger }),
-        ).rejects.toThrow(/not allowed to refer to a location outside/i);
+        ).rejects.toThrow(
+          /Source path .* is not allowed to refer to a location outside/i,
+        );
       },
     );
 
-    it.each(['README.md', 'readme.md'])(
+    it.each(['README.md', 'readme.md', 'docs/README.md', 'docs/readme.md'])(
       'should write %s to a symlink docs directory if docs/index.md does not exist',
       async fileName => {
         mockDir.setContent({
@@ -600,25 +602,58 @@ describe('helpers', () => {
         });
 
         await expect(
-          fs.readFile(mockDir.resolve('docs/index.md'), 'utf-8'),
+          fs.readFile(mockDir.resolve('target/docs/index.md'), 'utf-8'),
         ).resolves.toEqual(`${fileName} content`);
       },
     );
 
     it.each(['README.md', 'readme.md'])(
-      'should reject writing %s if targe symlink points outside of the current directory',
+      'should reject creating docs dir if target symlink points to non-existing directory outside of the current directory',
       async fileName => {
         const anotherMockDir = createMockDirectory();
 
         mockDir.setContent({
-          docs: ctx => ctx.symlink(anotherMockDir.path),
+          docs: ctx => ctx.symlink(anotherMockDir.resolve('docs')),
           'information.md': 'information.md content',
           [fileName]: `${fileName} content`,
         });
 
         await expect(
           patchIndexPreBuild({ inputDir: mockDir.path, logger: mockLogger }),
-        ).rejects.toThrow(/not allowed to refer to a location outside/i);
+        ).rejects.toThrow(
+          /Target path .* is not allowed to refer to a location outside/i,
+        );
+
+        await expect(fs.exists(anotherMockDir.resolve('docs'))).resolves.toBe(
+          false,
+        );
+      },
+    );
+
+    it.each(['README.md', 'readme.md'])(
+      'should reject creating docs dir if target symlink points to existing directory outside of the current directory',
+      async fileName => {
+        const anotherMockDir = createMockDirectory();
+
+        mockDir.setContent({
+          docs: ctx => ctx.symlink(anotherMockDir.resolve('docs')),
+          'information.md': 'information.md content',
+          [fileName]: `${fileName} content`,
+        });
+
+        anotherMockDir.setContent({
+          docs: {},
+        });
+
+        await expect(
+          patchIndexPreBuild({ inputDir: mockDir.path, logger: mockLogger }),
+        ).rejects.toThrow(
+          /Target path .* is not allowed to refer to a location outside/i,
+        );
+
+        await expect(
+          fs.exists(anotherMockDir.resolve('docs/index.md')),
+        ).resolves.toBe(false);
       },
     );
   });
