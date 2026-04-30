@@ -584,6 +584,43 @@ describe('helpers', () => {
         ).rejects.toThrow(/not allowed to refer to a location outside/i);
       },
     );
+
+    it.each(['README.md', 'readme.md'])(
+      'should write %s to a symlink docs directory if docs/index.md does not exist',
+      async fileName => {
+        mockDir.setContent({
+          'target/docs': {},
+          docs: ctx => ctx.symlink('./target/docs'),
+          [fileName]: `${fileName} content`,
+        });
+
+        await patchIndexPreBuild({
+          inputDir: mockDir.path,
+          logger: mockLogger,
+        });
+
+        await expect(
+          fs.readFile(mockDir.resolve('docs/index.md'), 'utf-8'),
+        ).resolves.toEqual(`${fileName} content`);
+      },
+    );
+
+    it.each(['README.md', 'readme.md'])(
+      'should reject writing %s if targe symlink points outside of the current directory',
+      async fileName => {
+        const anotherMockDir = createMockDirectory();
+
+        mockDir.setContent({
+          docs: ctx => ctx.symlink(anotherMockDir.path),
+          'information.md': 'information.md content',
+          [fileName]: `${fileName} content`,
+        });
+
+        await expect(
+          patchIndexPreBuild({ inputDir: mockDir.path, logger: mockLogger }),
+        ).rejects.toThrow(/not allowed to refer to a location outside/i);
+      },
+    );
   });
 
   describe('addBuildTimestampMetadata', () => {
