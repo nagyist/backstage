@@ -547,7 +547,6 @@ describe('helpers', () => {
     it.each(['README.md', 'readme.md', 'docs/README.md', 'docs/readme.md'])(
       'should use a symlink to %s if docs/index.md does not exist',
       async fileName => {
-        console.log(`Testing with symlink to ${fileName}`);
         mockDir.setContent({
           'information.md': 'information.md content',
           [fileName]: ctx => ctx.symlink(mockDir.resolve('information.md')),
