@@ -399,6 +399,11 @@ export const patchIndexPreBuild = async ({
 
   await fs.ensureDir(docsPath);
   for (const filePath of fallbacks) {
+    if (!isChildPath(inputDir, filePath)) {
+      throw new NotAllowedError(
+        `Path ${filePath} is not allowed to refer to a location outside ${inputDir}`,
+      );
+    }
     try {
       await fs.copyFile(filePath, indexMdPath);
       return;
