@@ -19,6 +19,7 @@ import { rest } from 'msw';
 import { ConfigReader } from '@backstage/config';
 import {
   GitLabIntegration,
+  parseRetryAfterMs,
   replaceGitLabUrlType,
   sleep,
 } from './GitLabIntegration';
@@ -474,6 +475,39 @@ describe('sleep', () => {
 
     // Verify the sleep function handled cleanup properly
     expect(jest.getTimerCount()).toBe(0);
+  });
+});
+
+describe('parseRetryAfterMs', () => {
+  it('parses delay-seconds', () => {
+    expect(parseRetryAfterMs('120', 5000)).toBe(120_000);
+    expect(parseRetryAfterMs('1', 5000)).toBe(1000);
+  });
+
+  it('parses an HTTP-date and computes a delta', () => {
+    const futureDate = new Date(Date.now() + 30_000).toUTCString();
+    const result = parseRetryAfterMs(futureDate, 5000);
+    expect(result).toBeGreaterThan(29_000);
+    expect(result).toBeLessThanOrEqual(30_000);
+  });
+
+  it('returns 0 for an HTTP-date in the past', () => {
+    const pastDate = new Date(Date.now() - 10_000).toUTCString();
+    expect(parseRetryAfterMs(pastDate, 5000)).toBe(0);
+  });
+
+  it('returns fallback for null or unparseable values', () => {
+    expect(parseRetryAfterMs(null, 5000)).toBe(5000);
+    expect(parseRetryAfterMs('', 5000)).toBe(5000);
+    expect(parseRetryAfterMs('not-a-date-or-number', 5000)).toBe(5000);
+  });
+
+  it('treats zero seconds as retry-immediately', () => {
+    expect(parseRetryAfterMs('0', 5000)).toBe(0);
+  });
+
+  it('returns fallback for negative seconds', () => {
+    expect(parseRetryAfterMs('-5', 5000)).toBe(5000);
   });
 });
 

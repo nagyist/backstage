@@ -124,6 +124,7 @@ export class GitLabIntegration implements ScmIntegration {
           // No more attempts left — propagate the network error.
           if (attempt++ >= maxRetries) throw e;
           await sleep(backoffDelay(attempt), abortSignal);
+          if (abortSignal?.aborted) throw e;
           continue;
         }
 
@@ -137,20 +138,49 @@ export class GitLabIntegration implements ScmIntegration {
           return response;
         }
 
-        // Determine delay from Retry-After header if present, otherwise exponential backoff
-        const retryAfter = response.headers.get('Retry-After');
-        const delay = retryAfter
-          ? parseInt(retryAfter, 10) * 1000
-          : backoffDelay(attempt);
+        // Retry-After is either delay-seconds or an HTTP-date (RFC 9110 §10.2.3).
+        const delay = parseRetryAfterMs(
+          response.headers.get('Retry-After'),
+          backoffDelay(attempt),
+        );
 
         // Release the underlying connection so it can be reused, since we're
         // about to discard this response in favor of a retry.
         await response.body?.cancel().catch(() => {});
 
         await sleep(delay, abortSignal);
+        if (abortSignal?.aborted) return response;
       }
     };
   }
+}
+
+/** @internal */
+export function parseRetryAfterMs(
+  headerValue: string | null,
+  fallbackMs: number,
+): number {
+  if (!headerValue) {
+    return fallbackMs;
+  }
+
+  // delay-seconds per RFC 9110 is 1*DIGIT
+  if (/^\d+$/.test(headerValue)) {
+    return Number(headerValue) * 1000;
+  }
+
+  // HTTP-dates (IMF-fixdate) always contain a comma, e.g.
+  // "Sun, 06 Nov 1994 08:49:37 GMT" — use that as a prerequisite
+  // to avoid Date.parse interpreting random strings as dates.
+  if (headerValue.includes(',')) {
+    const dateMs = Date.parse(headerValue);
+    if (Number.isFinite(dateMs)) {
+      const deltaMs = dateMs - Date.now();
+      return deltaMs > 0 ? deltaMs : 0;
+    }
+  }
+
+  return fallbackMs;
 }
 
 /** @internal */
