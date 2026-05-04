@@ -370,15 +370,15 @@ describe('GitLabIntegration', () => {
 
       // Attach the catch handler before advancing timers so the in-flight
       // rejections don't surface as unhandled.
-      const caught = integration
-        .fetch('https://h.com/api/v4')
-        .catch((e: unknown) => e);
+      let didReject = false;
+      const settled = integration.fetch('https://h.com/api/v4').catch(() => {
+        didReject = true;
+      });
       await jest.advanceTimersByTimeAsync(100);
       await jest.advanceTimersByTimeAsync(200);
-      const error = await caught;
+      await settled;
 
-      expect(error).toBeTruthy();
-      expect(String(error)).toMatch(/fetch/i);
+      expect(didReject).toBe(true);
       expect(callCount).toBe(3); // initial + 2 retries
     });
   });

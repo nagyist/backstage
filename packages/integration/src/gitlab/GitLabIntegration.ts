@@ -140,6 +140,10 @@ export class GitLabIntegration implements ScmIntegration {
           ? parseInt(retryAfter, 10) * 1000
           : Math.min(100 * Math.pow(2, attempt - 1), 10000); // Exponential backoff, cap at 10 seconds
 
+        // Release the underlying connection so it can be reused, since we're
+        // about to discard this response in favor of a retry.
+        await response?.body?.cancel().catch(() => {});
+
         await sleep(delay, abortSignal);
       }
     };
