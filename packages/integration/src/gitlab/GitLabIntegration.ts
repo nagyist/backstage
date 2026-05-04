@@ -75,9 +75,7 @@ export class GitLabIntegration implements ScmIntegration {
   }
 
   private createFetchStrategy(): FetchFunction {
-    let fetchFn: FetchFunction = async (url, options) => {
-      return fetch(url, { ...options, mode: 'same-origin' });
-    };
+    let fetchFn: FetchFunction = fetch;
 
     const retryConfig = this.integrationConfig.retry;
     if (retryConfig) {
@@ -111,29 +109,39 @@ export class GitLabIntegration implements ScmIntegration {
 
     return async (url, options) => {
       const abortSignal = options?.signal;
-      let response: Response;
       let attempt = 0;
       for (;;) {
-        response = await fetchFn(url, options);
-        // If response is not retryable, return immediately
-        if (!retryStatusCodes.includes(response.status)) {
-          break;
+        let response: Response | undefined;
+        let error: unknown;
+        try {
+          response = await fetchFn(url, options);
+        } catch (e) {
+          // The caller aborted — surface that immediately rather than retrying.
+          if (abortSignal?.aborted) {
+            throw e;
+          }
+          error = e;
         }
 
-        // If this was the last allowed attempt, return response
-        if (attempt++ >= maxRetries) {
-          break;
+        // Successful, non-retryable response: return immediately
+        if (response && !retryStatusCodes.includes(response.status)) {
+          return response;
         }
+
+        // Out of attempts: surface the response or rethrow the captured error
+        if (attempt++ >= maxRetries) {
+          if (error) throw error;
+          return response!;
+        }
+
         // Determine delay from Retry-After header if present, otherwise exponential backoff
-        const retryAfter = response.headers.get('Retry-After');
+        const retryAfter = response?.headers.get('Retry-After');
         const delay = retryAfter
           ? parseInt(retryAfter, 10) * 1000
           : Math.min(100 * Math.pow(2, attempt - 1), 10000); // Exponential backoff, cap at 10 seconds
 
         await sleep(delay, abortSignal);
       }
-
-      return response;
     };
   }
 }

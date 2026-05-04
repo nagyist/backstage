@@ -318,6 +318,69 @@ describe('GitLabIntegration', () => {
       expect(response.status).toBe(200);
       expect(callCount).toBe(3);
     });
+
+    it('retries on transient network errors and returns once recovered', async () => {
+      let callCount = 0;
+      worker.use(
+        rest.get('https://h.com/api/v4', (_req, res, ctx) => {
+          callCount += 1;
+          if (callCount === 1) {
+            return res.networkError('boom');
+          }
+          return res(ctx.status(200), ctx.json({}));
+        }),
+      );
+
+      const integration = new GitLabIntegration({
+        host: 'h.com',
+        apiBaseUrl: 'https://h.com/api/v4',
+        baseUrl: 'https://h.com',
+        retry: {
+          maxRetries: 3,
+          retryStatusCodes: [429],
+        },
+      });
+
+      const responsePromise = integration.fetch('https://h.com/api/v4');
+      await jest.advanceTimersByTimeAsync(100);
+      const response = await responsePromise;
+
+      expect(response.status).toBe(200);
+      expect(callCount).toBe(2);
+    });
+
+    it('surfaces the error after exhausting retries on persistent network errors', async () => {
+      let callCount = 0;
+      worker.use(
+        rest.get('https://h.com/api/v4', (_req, res) => {
+          callCount += 1;
+          return res.networkError('boom');
+        }),
+      );
+
+      const integration = new GitLabIntegration({
+        host: 'h.com',
+        apiBaseUrl: 'https://h.com/api/v4',
+        baseUrl: 'https://h.com',
+        retry: {
+          maxRetries: 2,
+          retryStatusCodes: [429],
+        },
+      });
+
+      // Attach the catch handler before advancing timers so the in-flight
+      // rejections don't surface as unhandled.
+      const caught = integration
+        .fetch('https://h.com/api/v4')
+        .catch((e: unknown) => e);
+      await jest.advanceTimersByTimeAsync(100);
+      await jest.advanceTimersByTimeAsync(200);
+      const error = await caught;
+
+      expect(error).toBeTruthy();
+      expect(String(error)).toMatch(/fetch/i);
+      expect(callCount).toBe(3); // initial + 2 retries
+    });
   });
 });
 
