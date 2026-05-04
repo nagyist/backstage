@@ -107,42 +107,45 @@ export class GitLabIntegration implements ScmIntegration {
       return fetchFn;
     }
 
+    // Exponential backoff, cap at 10 seconds
+    const backoffDelay = (a: number) =>
+      Math.min(100 * Math.pow(2, a - 1), 10000);
+
     return async (url, options) => {
       const abortSignal = options?.signal;
       let attempt = 0;
       for (;;) {
-        let response: Response | undefined;
-        let error: unknown;
+        let response: Response;
         try {
           response = await fetchFn(url, options);
         } catch (e) {
           // The caller aborted — surface that immediately rather than retrying.
-          if (abortSignal?.aborted) {
-            throw e;
-          }
-          error = e;
+          if (abortSignal?.aborted) throw e;
+          // No more attempts left — propagate the network error.
+          if (attempt++ >= maxRetries) throw e;
+          await sleep(backoffDelay(attempt), abortSignal);
+          continue;
         }
 
         // Successful, non-retryable response: return immediately
-        if (response && !retryStatusCodes.includes(response.status)) {
+        if (!retryStatusCodes.includes(response.status)) {
           return response;
         }
 
-        // Out of attempts: surface the response or rethrow the captured error
+        // No more attempts left — return the last (retryable) response.
         if (attempt++ >= maxRetries) {
-          if (response) return response;
-          throw error;
+          return response;
         }
 
         // Determine delay from Retry-After header if present, otherwise exponential backoff
-        const retryAfter = response?.headers.get('Retry-After');
+        const retryAfter = response.headers.get('Retry-After');
         const delay = retryAfter
           ? parseInt(retryAfter, 10) * 1000
-          : Math.min(100 * Math.pow(2, attempt - 1), 10000); // Exponential backoff, cap at 10 seconds
+          : backoffDelay(attempt);
 
         // Release the underlying connection so it can be reused, since we're
         // about to discard this response in favor of a retry.
-        await response?.body?.cancel().catch(() => {});
+        await response.body?.cancel().catch(() => {});
 
         await sleep(delay, abortSignal);
       }
