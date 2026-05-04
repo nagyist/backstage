@@ -75,7 +75,7 @@ export class GitLabIntegration implements ScmIntegration {
   }
 
   private createFetchStrategy(): FetchFunction {
-    let fetchFn: FetchFunction = fetch;
+    let fetchFn: FetchFunction = (url, options) => fetch(url, options);
 
     const retryConfig = this.integrationConfig.retry;
     if (retryConfig) {
