@@ -130,8 +130,8 @@ export class GitLabIntegration implements ScmIntegration {
 
         // Out of attempts: surface the response or rethrow the captured error
         if (attempt++ >= maxRetries) {
-          if (error) throw error;
-          return response!;
+          if (response) return response;
+          throw error;
         }
 
         // Determine delay from Retry-After header if present, otherwise exponential backoff
