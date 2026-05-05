@@ -103,6 +103,7 @@ dayjs
 debounce
 debounced
 debounces
+debouncing
 debuggability
 declaratively
 deduplicate
