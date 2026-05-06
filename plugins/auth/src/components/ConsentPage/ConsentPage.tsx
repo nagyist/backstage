@@ -48,7 +48,7 @@ const ConsentPageLayout = ({ children }: { children: React.ReactNode }) => (
 
 function getUrlHostname(value: string): string | undefined {
   try {
-    return new URL(value).hostname;
+    return new URL(value).host;
   } catch {
     return undefined;
   }
